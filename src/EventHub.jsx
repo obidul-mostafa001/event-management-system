@@ -31,7 +31,7 @@ import {
 
 const FONT = "'Inter', system-ui, -apple-system, sans-serif";
 const API_BASE = (typeof window !== "undefined" && window.__EVENTHUB_API_URL__) || "http://127.0.0.1:8000/api";
-
+const API_BASE = "https://eventhub-backend.onrender.com/api";
 const COLORS = {
   bg: "#F5F6F8",
   surface: "#FFFFFF",
