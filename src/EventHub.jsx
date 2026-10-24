@@ -3351,7 +3351,7 @@ export default function EventHub() {
                         <input
                           name="batch"
                           type="text"
-                          placeholder="e.g. 52nd"
+                          placeholder="e.g. 9th"
                           required
                           style={authInputStyle}
                         />
