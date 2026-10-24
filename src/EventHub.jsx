@@ -2060,7 +2060,7 @@ export default function EventHub() {
       tahsin: {
         full_name: "Obidul Mostafa Tahsin",
         phone: "01800000000",
-        batch: "51st",
+        batch: "9th",
         department: "CSE",
       },
     })
