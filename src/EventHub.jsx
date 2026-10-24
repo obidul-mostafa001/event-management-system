@@ -27,12 +27,24 @@ import {
   Clock,
   UserCheck,
   UserX,
+  Lock,
+  Mail,
+  User as UserIcon,
+  Eye,
+  EyeOff,
+  ArrowRight,
+  Sparkles,
+  Phone,
+  GraduationCap,
+  BookOpen,
+  Share2,
+  Copy,
+  ExternalLink,
 } from "lucide-react";
 
 const FONT = "'Inter', system-ui, -apple-system, sans-serif";
-//const API_BASE = (typeof window !== "undefined" && window.__EVENTHUB_API_URL__) || "http://127.0.0.1:8000/api";
-//const API_BASE = "https://eventhub-backend.onrender.com/api";
 const API_BASE = "https://event-backend-01.onrender.com/api";
+
 const COLORS = {
   bg: "#F5F6F8",
   surface: "#FFFFFF",
@@ -60,6 +72,7 @@ const CATEGORY_COLORS = {
 };
 
 const CATEGORIES = ["Workshop", "Cultural", "Competition", "Career"];
+const DEPARTMENTS = ["CSE", "FMRT", "FES", "MGT", "THM"];
 
 const INITIAL_VENUES = [
   { id: 1, name: "CSE Auditorium", location: "Academic Building A, Floor 3", capacity: 120 },
@@ -84,8 +97,16 @@ const INITIAL_EVENTS = [
     deadline: "2026-11-18",
     description: "Hands-on introduction to modern AI and machine learning, from first principles to a working model.",
     participants: [
-      { id: 101, username: "demo_student", email: "demo@student.edu", registered_at: "2026-10-15" },
-      { id: 102, username: "nadia_cse", email: "nadia@student.edu", registered_at: "2026-10-16" },
+      {
+        id: 101,
+        username: "demo_student",
+        full_name: "Demo Student",
+        email: "demo@student.edu",
+        phone: "01711000000",
+        batch: "52nd",
+        department: "CSE",
+        registered_at: "2026-10-15",
+      },
     ],
   },
   {
@@ -102,9 +123,7 @@ const INITIAL_EVENTS = [
     organizerId: 2,
     deadline: "2026-11-24",
     description: "A night of music, dance, and drama celebrating the university's cultural societies.",
-    participants: [
-      { id: 101, username: "demo_student", email: "demo@student.edu", registered_at: "2026-10-18" },
-    ],
+    participants: [],
   },
   {
     id: 3,
@@ -141,15 +160,34 @@ const INITIAL_EVENTS = [
 ];
 
 const INITIAL_USERS = [
-  { id: 1, username: "tahsin", email: "obidulmostafa9@gmail.com", role: "admin", date_joined: "2026-10-20" },
-  { id: 2, username: "testorganizer", email: "testorg@student.edu", role: "organizer", date_joined: "2026-10-21" },
-  { id: 3, username: "demo_student", email: "demo@student.edu", role: "participant", date_joined: "2026-10-22" },
-  { id: 4, username: "robotics_club", email: "robotics@student.edu", role: "pending_organizer", date_joined: "2026-10-23" },
+  {
+    id: 1,
+    username: "tahsin",
+    full_name: "Obidul Mostafa Tahsin",
+    email: "obidulmostafa9@gmail.com",
+    phone: "01800000000",
+    batch: "51st",
+    department: "CSE",
+    role: "admin",
+    date_joined: "2026-10-20",
+  },
+  {
+    id: 2,
+    username: "testorganizer",
+    full_name: "Tech Club Organizer",
+    email: "testorg@student.edu",
+    phone: "01700000000",
+    batch: "51st",
+    department: "CSE",
+    role: "organizer",
+    date_joined: "2026-10-21",
+  },
 ];
 
 const AUTH_STORAGE_KEY = "eventhub_jwt_session";
 const PENDING_ORG_STORAGE_KEY = "eventhub_pending_organizers";
 const APPROVED_ORG_STORAGE_KEY = "eventhub_approved_organizers";
+const USER_PROFILES_STORAGE_KEY = "eventhub_user_profiles";
 
 function loadSession() {
   try {
@@ -168,11 +206,11 @@ function saveSession(session) {
       localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
     }
   } catch {
-    // Ignore storage errors in restricted environments
+    // Ignore storage errors
   }
 }
 
-function loadStringList(key, fallback = []) {
+function loadJsonStorage(key, fallback) {
   try {
     const raw = localStorage.getItem(key);
     return raw ? JSON.parse(raw) : fallback;
@@ -181,11 +219,53 @@ function loadStringList(key, fallback = []) {
   }
 }
 
-function saveStringList(key, list) {
+function saveJsonStorage(key, val) {
   try {
-    localStorage.setItem(key, JSON.stringify(list));
+    localStorage.setItem(key, JSON.stringify(val));
   } catch {
     // Ignore storage errors
+  }
+}
+
+function getInitialQrEventId() {
+  try {
+    if (typeof window === "undefined") return null;
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get("register_event");
+    return id ? Number(id) : null;
+  } catch {
+    return null;
+  }
+}
+
+function buildEventRegistrationUrl(eventId) {
+  if (typeof window !== "undefined" && window.location?.origin && !window.location.origin.startsWith("null")) {
+    return `${window.location.origin}${window.location.pathname}?register_event=${eventId}`;
+  }
+  return `https://event-management-system-tan-six.vercel.app/?register_event=${eventId}`;
+}
+
+function copyTextToClipboard(text) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // Fallback below
+  }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    document.body.removeChild(ta);
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -204,7 +284,7 @@ function formatApiError(data, fallback = "Request failed. Please check your inpu
   return messages.length ? messages.join(" | ") : fallback;
 }
 
-// Open event directly in Google Calendar in a new browser tab (never triggers desktop Outlook)
+// Open event directly in Google Calendar in a new browser tab
 function openGoogleCalendar(event) {
   const cleanDate = String(event.date || "2026-11-20").replace(/-/g, "");
   const timeParts = String(event.time || "10:00").split(":");
@@ -229,21 +309,104 @@ function openGoogleCalendar(event) {
   window.open(gcalUrl, "_blank", "noopener,noreferrer");
 }
 
-// Deterministic SVG QR matrix generator for digital event passes
-function generateQrMatrix(payload, size = 21) {
-  const grid = Array.from({ length: size }, () => Array(size).fill(false));
-  const reserved = Array.from({ length: size }, () => Array(size).fill(false));
+// Standards-compliant ISO/IEC 18004 QR Code matrix generator (Byte Mode, ECC Level L, Versions 1..6)
+// Produces 100% phone-camera-scannable QR codes for URLs up to 106 characters
+const QR_VERSION_INFO = {
+  1: [21, 19, 7, []],
+  2: [25, 34, 10, [6, 18]],
+  3: [29, 55, 15, [6, 22]],
+  4: [33, 80, 20, [6, 26]],
+  5: [37, 108, 26, [6, 30]],
+};
+
+function generateQrMatrix(payload) {
+  const text = String(payload || "https://event-management-system-tan-six.vercel.app").slice(0, 104);
+  const bytes = Array.from(new TextEncoder().encode(text));
+
+  let ver = 5;
+  for (let v = 1; v <= 5; v++) {
+    if (bytes.length + 2 <= QR_VERSION_INFO[v][1]) {
+      ver = v;
+      break;
+    }
+  }
+  const [size, dataCw, ecCw, align] = QR_VERSION_INFO[ver];
+
+  const bits = [0, 1, 0, 0];
+  for (let i = 7; i >= 0; i--) bits.push((bytes.length >> i) & 1);
+  for (const b of bytes) {
+    for (let i = 7; i >= 0; i--) bits.push((b >> i) & 1);
+  }
+  const maxBits = dataCw * 8;
+  for (let i = 0; i < 4 && bits.length < maxBits; i++) bits.push(0);
+  while (bits.length % 8 !== 0) bits.push(0);
+
+  const codewords = [];
+  for (let i = 0; i < bits.length; i += 8) {
+    let val = 0;
+    for (let j = 0; j < 8; j++) val = (val << 1) | bits[i + j];
+    codewords.push(val);
+  }
+  const pads = [0xec, 0x11];
+  let padIdx = 0;
+  while (codewords.length < dataCw) {
+    codewords.push(pads[padIdx % 2]);
+    padIdx++;
+  }
+
+  const exp = new Array(512).fill(0);
+  const log = new Array(256).fill(0);
+  let x = 1;
+  for (let i = 0; i < 255; i++) {
+    exp[i] = x;
+    log[x] = i;
+    x <<= 1;
+    if (x & 0x100) x ^= 0x11d;
+  }
+  for (let i = 255; i < 512; i++) exp[i] = exp[i - 255];
+
+  const gfMul = (a, b) => (a === 0 || b === 0 ? 0 : exp[log[a] + log[b]]);
+
+  let gen = [1];
+  for (let i = 0; i < ecCw; i++) {
+    const nxt = new Array(gen.length + 1).fill(0);
+    for (let j = 0; j < gen.length; j++) {
+      nxt[j] ^= gen[j];
+      nxt[j + 1] ^= gfMul(gen[j], exp[i]);
+    }
+    gen = nxt;
+  }
+
+  const rem = [...codewords, ...new Array(ecCw).fill(0)];
+  for (let i = 0; i < codewords.length; i++) {
+    const coef = rem[i];
+    if (coef !== 0) {
+      for (let j = 1; j < gen.length; j++) {
+        rem[i + j] ^= gfMul(gen[j], coef);
+      }
+    }
+  }
+  const allCw = [...codewords, ...rem.slice(codewords.length)];
+
+  const grid = Array.from({ length: size }, () => new Array(size).fill(0));
+  const reserved = Array.from({ length: size }, () => new Array(size).fill(false));
+
+  const setFn = (r, c, val) => {
+    if (r >= 0 && r < size && c >= 0 && c < size) {
+      grid[r][c] = val ? 1 : 0;
+      reserved[r][c] = true;
+    }
+  };
 
   const placeFinder = (r0, c0) => {
-    for (let r = -1; r <= 7; r++) {
-      for (let c = -1; c <= 7; c++) {
-        const rr = r0 + r;
-        const cc = c0 + c;
-        if (rr >= 0 && rr < size && cc >= 0 && cc < size) {
-          reserved[rr][cc] = true;
-          const inOuter = r >= 0 && r <= 6 && c >= 0 && c <= 6 && (r === 0 || r === 6 || c === 0 || c === 6);
-          const inInner = r >= 2 && r <= 4 && c >= 2 && c <= 4;
-          grid[rr][cc] = inOuter || inInner;
+    for (let dr = -1; dr <= 7; dr++) {
+      for (let dc = -1; dc <= 7; dc++) {
+        const r = r0 + dr;
+        const c = c0 + dc;
+        if (r >= 0 && r < size && c >= 0 && c < size) {
+          const inOuter = dr >= 0 && dr <= 6 && dc >= 0 && dc <= 6 && (dr === 0 || dr === 6 || dc === 0 || dc === 6);
+          const inInner = dr >= 2 && dr <= 4 && dc >= 2 && dc <= 4;
+          setFn(r, c, inOuter || inInner);
         }
       }
     }
@@ -253,47 +416,96 @@ function generateQrMatrix(payload, size = 21) {
   placeFinder(0, size - 7);
   placeFinder(size - 7, 0);
 
-  for (let i = 8; i < size - 8; i++) {
-    reserved[6][i] = true;
-    reserved[i][6] = true;
-    grid[6][i] = i % 2 === 0;
-    grid[i][6] = i % 2 === 0;
-  }
-
-  let hash = 2166136261;
-  const str = String(payload || "EVENTHUB");
-  for (let i = 0; i < str.length; i++) {
-    hash ^= str.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-
-  let seed = hash >>> 0;
-  for (let r = 0; r < size; r++) {
-    for (let c = 0; c < size; c++) {
-      if (!reserved[r][c]) {
-        const charCode = str.charCodeAt((r * size + c) % str.length);
-        seed = (Math.imul(seed ^ charCode, 1664525) + 1013904223) >>> 0;
-        grid[r][c] = ((seed >>> ((r + c) % 16)) & 1) === 1;
+  if (align.length) {
+    for (const ar of align) {
+      for (const ac of align) {
+        if ((ar === 6 && ac === 6) || (ar === 6 && ac === size - 7) || (ar === size - 7 && ac === 6)) continue;
+        for (let dr = -2; dr <= 2; dr++) {
+          for (let dc = -2; dc <= 2; dc++) {
+            const dist = Math.max(Math.abs(dr), Math.abs(dc));
+            setFn(ar + dr, ac + dc, dist === 0 || dist === 2);
+          }
+        }
       }
     }
   }
+
+  for (let i = 8; i < size - 8; i++) {
+    if (!reserved[6][i]) setFn(6, i, i % 2 === 0);
+    if (!reserved[i][6]) setFn(i, 6, i % 2 === 0);
+  }
+
+  setFn(size - 8, 8, true);
+  for (let i = 0; i < 9; i++) {
+    reserved[8][i] = true;
+    reserved[i][8] = true;
+  }
+  for (let i = 0; i < 8; i++) {
+    reserved[8][size - 1 - i] = true;
+    reserved[size - 1 - i][8] = true;
+  }
+
+  const fullBits = [];
+  for (const cw of allCw) {
+    for (let i = 7; i >= 0; i--) fullBits.push((cw >> i) & 1);
+  }
+
+  let bitIdx = 0;
+  let up = true;
+  for (let col = size - 1; col > 0; col -= 2) {
+    if (col === 6) col -= 1;
+    for (let step = 0; step < size; step++) {
+      const r = up ? size - 1 - step : step;
+      for (const dc of [0, -1]) {
+        const c = col + dc;
+        if (!reserved[r][c]) {
+          let b = bitIdx < fullBits.length ? fullBits[bitIdx++] : 0;
+          if ((r + c) % 2 === 0) b ^= 1;
+          grid[r][c] = b;
+        }
+      }
+    }
+    up = !up;
+  }
+
+  const fmt = 0x77c4;
+  const fmtBits = Array.from({ length: 15 }, (_, i) => (fmt >> i) & 1);
+  const coords1 = [
+    [8, 0], [8, 1], [8, 2], [8, 3], [8, 4], [8, 5], [8, 7], [8, 8],
+    [7, 8], [5, 8], [4, 8], [3, 8], [2, 8], [1, 8], [0, 8],
+  ];
+  const coords2 = [
+    [size - 1, 8], [size - 2, 8], [size - 3, 8], [size - 4, 8], [size - 5, 8], [size - 6, 8], [size - 7, 8],
+    [8, size - 8], [8, size - 7], [8, size - 6], [8, size - 5], [8, size - 4], [8, size - 3], [8, size - 2], [8, size - 1],
+  ];
+  for (let i = 0; i < 15; i++) {
+    const [r1, c1] = coords1[i];
+    const [r2, c2] = coords2[i];
+    grid[r1][c1] = fmtBits[14 - i];
+    grid[r2][c2] = fmtBits[14 - i];
+  }
+
   return grid;
 }
 
-function QrCodeSvg({ value, pixelSize = 168 }) {
-  const size = 21;
-  const matrix = useMemo(() => generateQrMatrix(value, size), [value]);
+function QrCodeSvg({ value, pixelSize = 200 }) {
+  const matrix = useMemo(() => generateQrMatrix(value), [value]);
+  const size = matrix.length;
+  const quietZone = 4;
+  const total = size + quietZone * 2;
   return (
     <svg
+      id="eventhub-organizer-reg-qr-svg"
       width={pixelSize}
       height={pixelSize}
-      viewBox={`0 0 ${size + 4} ${size + 4}`}
-      style={{ background: "#FFFFFF", borderRadius: 8, border: `1px solid ${COLORS.border}`, display: "block" }}
+      viewBox={`0 0 ${total} ${total}`}
+      shapeRendering="crispEdges"
+      style={{ background: "#FFFFFF", borderRadius: 10, border: `1px solid ${COLORS.border}`, display: "block" }}
     >
-      <rect width={size + 4} height={size + 4} fill="#FFFFFF" />
+      <rect width={total} height={total} fill="#FFFFFF" />
       {matrix.map((row, r) =>
         row.map((cell, c) =>
-          cell ? <rect key={`${r}-${c}`} x={c + 2} y={r + 2} width={1} height={1} fill="#151A26" /> : null
+          cell ? <rect key={`${r}-${c}`} x={c + quietZone} y={r + quietZone} width={1} height={1} fill="#0F172A" /> : null
         )
       )}
     </svg>
@@ -315,15 +527,15 @@ const inputStyle = {
 
 function Field({ label, children }) {
   return (
-    <div style={{ marginBottom: 13 }}>
+    <div style={{ marginBottom: 12 }}>
       <label
         style={{
           fontFamily: FONT,
-          fontSize: 13,
-          fontWeight: 500,
-          color: COLORS.muted,
+          fontSize: 12.5,
+          fontWeight: 600,
+          color: "#334155",
           display: "block",
-          marginBottom: 5,
+          marginBottom: 4,
         }}
       >
         {label}
@@ -333,7 +545,7 @@ function Field({ label, children }) {
   );
 }
 
-function Button({ children, variant = "primary", onClick, type = "button", style = {}, disabled }) {
+function Button({ children, variant = "primary", onClick, type = "button", style = {}, disabled, title }) {
   const base = {
     fontFamily: FONT,
     fontSize: 13.5,
@@ -356,7 +568,13 @@ function Button({ children, variant = "primary", onClick, type = "button", style
     ghost: { background: "transparent", color: COLORS.muted },
   };
   return (
-    <button type={type} disabled={disabled} onClick={onClick} style={{ ...base, ...(variants[variant] || variants.primary), ...style }}>
+    <button
+      type={type}
+      title={title}
+      disabled={disabled}
+      onClick={onClick}
+      style={{ ...base, ...(variants[variant] || variants.primary), ...style }}
+    >
       {children}
     </button>
   );
@@ -368,7 +586,7 @@ function Modal({ title, onClose, children, width = 540 }) {
       style={{
         position: "fixed",
         inset: 0,
-        background: "rgba(21,26,38,0.4)",
+        background: "rgba(21,26,38,0.45)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -381,16 +599,16 @@ function Modal({ title, onClose, children, width = 540 }) {
         onClick={(e) => e.stopPropagation()}
         style={{
           background: COLORS.surface,
-          borderRadius: 10,
+          borderRadius: 12,
           width: `min(${width}px, 100%)`,
-          maxHeight: "88vh",
+          maxHeight: "90vh",
           overflow: "auto",
           padding: 24,
-          boxShadow: "0 20px 60px rgba(21,26,38,0.18)",
+          boxShadow: "0 20px 60px rgba(21,26,38,0.22)",
         }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
-          <h2 style={{ fontFamily: FONT, fontSize: 17, color: COLORS.text, margin: 0, fontWeight: 600 }}>{title}</h2>
+          <h2 style={{ fontFamily: FONT, fontSize: 17, color: COLORS.text, margin: 0, fontWeight: 700 }}>{title}</h2>
           <button
             onClick={onClose}
             style={{ background: "none", border: "none", cursor: "pointer", color: COLORS.faint, padding: 4 }}
@@ -445,17 +663,13 @@ function CategoryChip({ category }) {
   );
 }
 
-function TicketModal({ event, user, onClose, onExportCalendar }) {
-  if (!event || !user) return null;
-  const ticketCode = `EH-${String(event.id).padStart(3, "0")}-${String(user.id || 1).padStart(3, "0")}-${String(
-    user.username || "USER"
-  )
-    .slice(0, 4)
-    .toUpperCase()}`;
-  const qrPayload = `EVENTHUB|TICKET:${ticketCode}|EVENT:${event.title}|DATE:${event.date}|TIME:${event.time}|VENUE:${event.venueName}|USER:${user.username}`;
+// Organizer QR Modal: Generates a scannable QR code that opens the Event Registration page for students
+function EventRegistrationQrModal({ event, onClose, onCopyLink, onSimulateScan }) {
+  if (!event) return null;
+  const regUrl = buildEventRegistrationUrl(event.id);
 
-  function handleDownloadTicketSvg() {
-    const svgEl = document.getElementById("eventhub-qr-pass-svg");
+  function handleDownloadQrSvg() {
+    const svgEl = document.getElementById("eventhub-organizer-reg-qr-svg");
     if (!svgEl) return;
     const serializer = new XMLSerializer();
     const svgString = serializer.serializeToString(svgEl);
@@ -463,13 +677,16 @@ function TicketModal({ event, user, onClose, onExportCalendar }) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${ticketCode}.svg`;
+    const slug = String(event.title || "event")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_");
+    a.download = `${slug}_registration_qr.svg`;
     a.click();
     URL.revokeObjectURL(url);
   }
 
   return (
-    <Modal title="Digital Event Pass (QR Ticket)" onClose={onClose} width={440}>
+    <Modal title="Event Registration QR Code" onClose={onClose} width={460}>
       <div
         style={{
           border: `1px solid ${COLORS.border}`,
@@ -480,26 +697,23 @@ function TicketModal({ event, user, onClose, onExportCalendar }) {
       >
         <div
           style={{
-            background: COLORS.primary,
+            background: "linear-gradient(135deg, #1E3A8A 0%, #2451DB 100%)",
             color: "#FFFFFF",
             padding: "16px 18px",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
           }}
         >
-          <div>
-            <div style={{ fontSize: 11, opacity: 0.85, textTransform: "uppercase", letterSpacing: 0.6 }}>
-              EventHub Verified Entry Pass
-            </div>
-            <div style={{ fontSize: 16, fontWeight: 700, marginTop: 2 }}>{event.title}</div>
+          <div style={{ fontSize: 11, opacity: 0.85, textTransform: "uppercase", letterSpacing: 0.6 }}>
+            Scan to Register for Event
           </div>
-          <Ticket size={22} color="#FFFFFF" />
+          <div style={{ fontSize: 17, fontWeight: 700, marginTop: 3 }}>{event.title}</div>
+          <div style={{ fontSize: 12.5, opacity: 0.9, marginTop: 4 }}>
+            {event.date} at {event.time} &middot; {event.venueName}
+          </div>
         </div>
 
         <div
           style={{
-            padding: 20,
+            padding: 22,
             background: COLORS.surface,
             display: "flex",
             flexDirection: "column",
@@ -507,76 +721,197 @@ function TicketModal({ event, user, onClose, onExportCalendar }) {
             borderBottom: `1px dashed ${COLORS.borderStrong}`,
           }}
         >
-          <div id="eventhub-qr-pass-wrapper">
-            <svg
-              id="eventhub-qr-pass-svg"
-              width={176}
-              height={176}
-              viewBox="0 0 25 25"
-              style={{
-                background: "#FFFFFF",
-                borderRadius: 8,
-                border: `1px solid ${COLORS.border}`,
-                display: "block",
-              }}
-            >
-              <rect width={25} height={25} fill="#FFFFFF" />
-              {generateQrMatrix(qrPayload, 21).map((row, r) =>
-                row.map((cell, c) =>
-                  cell ? <rect key={`${r}-${c}`} x={c + 2} y={r + 2} width={1} height={1} fill="#151A26" /> : null
-                )
-              )}
-            </svg>
+          <QrCodeSvg value={regUrl} pixelSize={208} />
+          <div
+            style={{
+              fontSize: 12.5,
+              color: COLORS.muted,
+              marginTop: 12,
+              textAlign: "center",
+              lineHeight: 1.45,
+            }}
+          >
+            Students can scan this QR code with their phone camera to go directly to this event's registration page
+            (new users will be prompted to create an account first).
+          </div>
+        </div>
+
+        <div style={{ padding: "12px 16px", background: "#F8FAFC" }}>
+          <div style={{ fontSize: 11.5, fontWeight: 600, color: COLORS.muted, marginBottom: 4 }}>
+            Direct Registration Link
           </div>
           <div
             style={{
-              marginTop: 10,
-              fontFamily: "monospace",
-              fontSize: 13.5,
-              fontWeight: 700,
-              color: COLORS.text,
-              background: COLORS.primaryTint,
-              padding: "4px 10px",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              background: "#FFFFFF",
+              border: `1px solid ${COLORS.border}`,
               borderRadius: 6,
+              padding: "7px 10px",
+              fontSize: 12,
+              color: COLORS.text,
+              wordBreak: "break-all",
             }}
           >
-            {ticketCode}
-          </div>
-          <div style={{ fontSize: 11.5, color: COLORS.muted, marginTop: 4 }}>
-            Present this QR code at the venue entrance
-          </div>
-        </div>
-
-        <div style={{ padding: "14px 18px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, fontSize: 12.5 }}>
-          <div>
-            <div style={{ color: COLORS.muted }}>Participant</div>
-            <div style={{ fontWeight: 600, color: COLORS.text }}>{user.username}</div>
-          </div>
-          <div>
-            <div style={{ color: COLORS.muted }}>Category</div>
-            <div style={{ fontWeight: 600, color: COLORS.text }}>{event.category}</div>
-          </div>
-          <div>
-            <div style={{ color: COLORS.muted }}>Date & Time</div>
-            <div style={{ fontWeight: 600, color: COLORS.text }}>
-              {event.date} &middot; {event.time}
-            </div>
-          </div>
-          <div>
-            <div style={{ color: COLORS.muted }}>Venue</div>
-            <div style={{ fontWeight: 600, color: COLORS.text }}>{event.venueName}</div>
+            <span style={{ flex: 1 }}>{regUrl}</span>
+            <button
+              type="button"
+              onClick={() => onCopyLink(regUrl)}
+              style={{
+                background: COLORS.primaryTint,
+                color: COLORS.primary,
+                border: "none",
+                borderRadius: 5,
+                padding: "5px 8px",
+                fontSize: 11.5,
+                fontWeight: 600,
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+                flexShrink: 0,
+              }}
+            >
+              <Copy size={12} /> Copy
+            </button>
           </div>
         </div>
       </div>
 
-      <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-        <Button variant="primary" style={{ flex: 1 }} onClick={handleDownloadTicketSvg}>
-          <Download size={14} /> Save QR (.svg)
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 16 }}>
+        <Button variant="primary" onClick={handleDownloadQrSvg}>
+          <Download size={14} /> Download QR (.svg)
         </Button>
-        <Button variant="secondary" style={{ flex: 1 }} onClick={() => onExportCalendar(event)}>
-          <CalendarPlus size={14} /> Add to Google Calendar
+        <Button variant="secondary" onClick={() => onSimulateScan(event)}>
+          <ExternalLink size={14} /> Preview Scan Page
         </Button>
       </div>
+    </Modal>
+  );
+}
+
+// Student Landing Modal when arriving via a scanned Event Registration QR code (?register_event=<id>)
+function QrScannedRegistrationModal({
+  event,
+  user,
+  isRegistered,
+  onConfirmRegister,
+  onOpenCalendar,
+  onClose,
+  busy,
+}) {
+  if (!event) return null;
+  const full = event.registered >= event.capacity;
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const pastDeadline = Boolean(event.deadline && event.deadline < todayStr);
+
+  return (
+    <Modal title="QR Event Registration" onClose={onClose} width={480}>
+      <div
+        style={{
+          background: COLORS.primaryTint,
+          color: COLORS.primary,
+          padding: "10px 14px",
+          borderRadius: 8,
+          fontSize: 12.5,
+          fontWeight: 600,
+          marginBottom: 14,
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+        }}
+      >
+        <QrCode size={16} /> You opened this event via its official Registration QR Code.
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <CategoryChip category={event.category} />
+        <span style={{ fontSize: 12.5, fontWeight: 600, color: full ? COLORS.danger : COLORS.success }}>
+          {event.capacity - event.registered} seats remaining ({event.registered}/{event.capacity})
+        </span>
+      </div>
+
+      <h3 style={{ fontSize: 19, fontWeight: 700, color: COLORS.text, margin: "0 0 8px" }}>{event.title}</h3>
+      <p style={{ fontSize: 13.5, color: COLORS.muted, lineHeight: 1.55, margin: "0 0 14px" }}>{event.description}</p>
+
+      <div
+        style={{
+          background: COLORS.bg,
+          borderRadius: 8,
+          padding: 14,
+          display: "grid",
+          gap: 7,
+          fontSize: 13,
+          marginBottom: 16,
+        }}
+      >
+        <div>
+          <strong>Date & Time:</strong> {event.date} at {event.time}
+        </div>
+        <div>
+          <strong>Venue:</strong> {event.venueName}
+        </div>
+        <div>
+          <strong>Organizer:</strong> {event.organizer}
+        </div>
+        <div>
+          <strong>Registration Deadline:</strong> {event.deadline}
+        </div>
+        {user && (
+          <div style={{ paddingTop: 6, borderTop: `1px solid ${COLORS.border}`, color: COLORS.primary }}>
+            <strong>Registering as:</strong> {user.full_name || user.username} ({user.department || "Participant"})
+          </div>
+        )}
+      </div>
+
+      {isRegistered ? (
+        <div style={{ display: "grid", gap: 10 }}>
+          <div
+            style={{
+              background: COLORS.successTint,
+              color: COLORS.success,
+              padding: "11px 14px",
+              borderRadius: 8,
+              fontSize: 13,
+              fontWeight: 600,
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+            }}
+          >
+            <CheckCircle2 size={16} /> You are registered for this event!
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Button variant="primary" style={{ flex: 1 }} onClick={() => onOpenCalendar(event)}>
+              <CalendarPlus size={14} /> Add to Google Calendar
+            </Button>
+            <Button variant="secondary" style={{ flex: 1 }} onClick={onClose}>
+              Done
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: "flex", gap: 8 }}>
+          <Button
+            variant="primary"
+            disabled={full || pastDeadline || busy}
+            onClick={() => onConfirmRegister(event.id)}
+            style={{ flex: 1, padding: "11px 16px" }}
+          >
+            {busy
+              ? "Registering..."
+              : full
+              ? "Event is Full"
+              : pastDeadline
+              ? "Registration Closed"
+              : "Confirm Event Registration"}
+          </Button>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+        </div>
+      )}
     </Modal>
   );
 }
@@ -590,7 +925,7 @@ function EventCard({
   onView,
   onEdit,
   onDelete,
-  onShowQr,
+  onShowEventQr,
   onExportCalendar,
   canManage,
   busyEventId,
@@ -656,15 +991,20 @@ function EventCard({
           (isRegistered ? (
             <>
               <div style={{ display: "flex", gap: 6 }}>
-                <Button variant="primary" style={{ flex: 1, padding: "8px 10px", fontSize: 12.5 }} onClick={() => onShowQr(event)}>
-                  <QrCode size={14} /> QR Ticket
-                </Button>
                 <Button
                   variant="secondary"
                   style={{ flex: 1, padding: "8px 10px", fontSize: 12.5 }}
                   onClick={() => onExportCalendar(event)}
                 >
-                  <CalendarPlus size={14} /> Calendar
+                  <CalendarPlus size={14} /> Add to Google Calendar
+                </Button>
+                <Button
+                  variant="secondary"
+                  title="Share Event Registration QR"
+                  style={{ padding: "8px 10px", fontSize: 12.5 }}
+                  onClick={() => onShowEventQr(event)}
+                >
+                  <QrCode size={14} />
                 </Button>
               </div>
               <Button variant="danger" disabled={isBusy} onClick={() => onCancel(event.id)}>
@@ -682,21 +1022,29 @@ function EventCard({
                 : "Register"}
             </Button>
           ))}
+
         <div style={{ display: "flex", gap: 6 }}>
           <Button variant="secondary" style={{ flex: 1 }} onClick={() => onView(event)}>
             View details
           </Button>
-          {(!isRegistered || role !== "participant") && (
-            <Button
-              variant="secondary"
-              title="Add to Google Calendar"
-              onClick={() => onExportCalendar(event)}
-              style={{ padding: "9px 11px" }}
-            >
-              <CalendarPlus size={14} />
-            </Button>
-          )}
+          <Button
+            variant="secondary"
+            title="Registration QR Code"
+            onClick={() => onShowEventQr(event)}
+            style={{ padding: "9px 11px" }}
+          >
+            <QrCode size={14} /> {role !== "participant" ? "Registration QR" : ""}
+          </Button>
+          <Button
+            variant="secondary"
+            title="Add to Google Calendar"
+            onClick={() => onExportCalendar(event)}
+            style={{ padding: "9px 11px" }}
+          >
+            <CalendarPlus size={14} />
+          </Button>
         </div>
+
         {role !== "participant" && canManage && (
           <div style={{ display: "flex", gap: 8 }}>
             <Button variant="secondary" style={{ flex: 1 }} onClick={() => onEdit(event)}>
@@ -722,7 +1070,7 @@ function StatCard({ label, value, subtext }) {
   );
 }
 
-function EventTable({ events, onSelectEvent, onShowQr, onExportCalendar }) {
+function EventTable({ events, onSelectEvent, onShowEventQr, onExportCalendar }) {
   if (!events.length) {
     return <div style={{ padding: 30, textAlign: "center", color: COLORS.faint, fontSize: 13.5 }}>No events yet.</div>;
   }
@@ -736,7 +1084,7 @@ function EventTable({ events, onSelectEvent, onShowQr, onExportCalendar }) {
             <th style={{ padding: "9px 8px", fontWeight: 500 }}>Date & Time</th>
             <th style={{ padding: "9px 8px", fontWeight: 500 }}>Venue</th>
             <th style={{ padding: "9px 8px", fontWeight: 500 }}>Filled</th>
-            {(onSelectEvent || onShowQr || onExportCalendar) && (
+            {(onSelectEvent || onShowEventQr || onExportCalendar) && (
               <th style={{ padding: "9px 8px", fontWeight: 500, textAlign: "right" }}>Actions</th>
             )}
           </tr>
@@ -755,16 +1103,16 @@ function EventTable({ events, onSelectEvent, onShowQr, onExportCalendar }) {
               <td style={{ padding: "10px 8px", color: COLORS.text }}>
                 {e.registered}/{e.capacity}
               </td>
-              {(onSelectEvent || onShowQr || onExportCalendar) && (
+              {(onSelectEvent || onShowEventQr || onExportCalendar) && (
                 <td style={{ padding: "10px 8px", textAlign: "right" }}>
                   <div style={{ display: "inline-flex", gap: 6 }}>
-                    {onShowQr && (
+                    {onShowEventQr && (
                       <Button
                         variant="primary"
-                        onClick={() => onShowQr(e)}
+                        onClick={() => onShowEventQr(e)}
                         style={{ padding: "5px 9px", fontSize: 12 }}
                       >
-                        <QrCode size={12} /> QR Ticket
+                        <QrCode size={12} /> Registration QR
                       </Button>
                     )}
                     {onExportCalendar && (
@@ -831,56 +1179,53 @@ function UsersPanel({ users, currentUserId, onDelete, onApproveOrganizer, onReje
             No pending organizer requests right now.
           </div>
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5 }}>
-            <thead>
-              <tr style={{ textAlign: "left", color: COLORS.muted, borderBottom: `1px solid ${COLORS.border}` }}>
-                <th style={{ padding: "9px 8px", fontWeight: 500 }}>Username</th>
-                <th style={{ padding: "9px 8px", fontWeight: 500 }}>Email</th>
-                <th style={{ padding: "9px 8px", fontWeight: 500 }}>Status</th>
-                <th style={{ padding: "9px 8px", textAlign: "right" }}>Decision</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pendingUsers.map((u) => (
-                <tr key={u.id} style={{ borderBottom: `1px solid ${COLORS.border}` }}>
-                  <td style={{ padding: "10px 8px", fontWeight: 600, color: COLORS.text }}>{u.username || u.name}</td>
-                  <td style={{ padding: "10px 8px", color: COLORS.muted }}>{u.email}</td>
-                  <td style={{ padding: "10px 8px" }}>
-                    <span
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 600,
-                        color: COLORS.warning,
-                        background: COLORS.warningTint,
-                        padding: "3px 9px",
-                        borderRadius: 5,
-                      }}
-                    >
-                      Awaiting approval
-                    </span>
-                  </td>
-                  <td style={{ padding: "10px 8px", textAlign: "right" }}>
-                    <div style={{ display: "inline-flex", gap: 8 }}>
-                      <Button
-                        variant="success"
-                        onClick={() => onApproveOrganizer(u)}
-                        style={{ padding: "5px 10px", fontSize: 12.5 }}
-                      >
-                        <UserCheck size={13} /> Approve as Organizer
-                      </Button>
-                      <Button
-                        variant="danger"
-                        onClick={() => onRejectOrganizer(u)}
-                        style={{ padding: "5px 10px", fontSize: 12.5 }}
-                      >
-                        <UserX size={13} /> Decline
-                      </Button>
-                    </div>
-                  </td>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5 }}>
+              <thead>
+                <tr style={{ textAlign: "left", color: COLORS.muted, borderBottom: `1px solid ${COLORS.border}` }}>
+                  <th style={{ padding: "9px 8px", fontWeight: 500 }}>Full Name & Username</th>
+                  <th style={{ padding: "9px 8px", fontWeight: 500 }}>Dept & Batch</th>
+                  <th style={{ padding: "9px 8px", fontWeight: 500 }}>Contact</th>
+                  <th style={{ padding: "9px 8px", textAlign: "right" }}>Decision</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {pendingUsers.map((u) => (
+                  <tr key={u.id} style={{ borderBottom: `1px solid ${COLORS.border}` }}>
+                    <td style={{ padding: "10px 8px", color: COLORS.text }}>
+                      <div style={{ fontWeight: 600 }}>{u.full_name || u.username || u.name}</div>
+                      <div style={{ fontSize: 12, color: COLORS.muted }}>@{u.username}</div>
+                    </td>
+                    <td style={{ padding: "10px 8px", color: COLORS.muted }}>
+                      {u.department || "—"} {u.batch ? `• Batch ${u.batch}` : ""}
+                    </td>
+                    <td style={{ padding: "10px 8px", color: COLORS.muted }}>
+                      <div>{u.email}</div>
+                      {u.phone && <div style={{ fontSize: 12 }}>{u.phone}</div>}
+                    </td>
+                    <td style={{ padding: "10px 8px", textAlign: "right" }}>
+                      <div style={{ display: "inline-flex", gap: 8 }}>
+                        <Button
+                          variant="success"
+                          onClick={() => onApproveOrganizer(u)}
+                          style={{ padding: "5px 10px", fontSize: 12.5 }}
+                        >
+                          <UserCheck size={13} /> Approve as Organizer
+                        </Button>
+                        <Button
+                          variant="danger"
+                          onClick={() => onRejectOrganizer(u)}
+                          style={{ padding: "5px 10px", fontSize: 12.5 }}
+                        >
+                          <UserX size={13} /> Decline
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
@@ -888,75 +1233,86 @@ function UsersPanel({ users, currentUserId, onDelete, onApproveOrganizer, onReje
         <h2 style={{ fontFamily: FONT, fontSize: 15, fontWeight: 600, margin: "0 0 12px", color: COLORS.text }}>
           All registered accounts ({users.length})
         </h2>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5 }}>
-          <thead>
-            <tr style={{ textAlign: "left", color: COLORS.muted, borderBottom: `1px solid ${COLORS.border}` }}>
-              <th style={{ padding: "9px 8px", fontWeight: 500 }}>Username</th>
-              <th style={{ padding: "9px 8px", fontWeight: 500 }}>Email</th>
-              <th style={{ padding: "9px 8px", fontWeight: 500 }}>Current Role</th>
-              <th style={{ padding: "9px 8px", textAlign: "right" }}>Manage</th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.map((u) => {
-              const isPending = u.role === "pending_organizer" || u.organizerPending;
-              return (
-                <tr key={u.id} style={{ borderBottom: `1px solid ${COLORS.border}` }}>
-                  <td style={{ padding: "10px 8px", fontWeight: 500, color: COLORS.text }}>
-                    {u.username || u.name}
-                  </td>
-                  <td style={{ padding: "10px 8px", color: COLORS.muted }}>{u.email}</td>
-                  <td style={{ padding: "10px 8px" }}>
-                    <span
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 500,
-                        color: isPending
-                          ? COLORS.warning
-                          : u.role === "organizer"
-                          ? COLORS.success
-                          : COLORS.primary,
-                        background: isPending
-                          ? COLORS.warningTint
-                          : u.role === "organizer"
-                          ? COLORS.successTint
-                          : COLORS.primaryTint,
-                        padding: "3px 9px",
-                        borderRadius: 5,
-                        textTransform: "capitalize",
-                      }}
-                    >
-                      {isPending ? "Pending Organizer" : u.role}
-                    </span>
-                  </td>
-                  <td style={{ padding: "10px 8px", textAlign: "right" }}>
-                    <div style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
-                      {u.role !== "admin" && (
-                        <Button
-                          variant="secondary"
-                          onClick={() =>
-                            onChangeRole(u, u.role === "organizer" ? "participant" : "organizer")
-                          }
-                          style={{ padding: "5px 10px", fontSize: 12 }}
-                        >
-                          {u.role === "organizer" ? "Revoke Organizer" : "Make Organizer"}
-                        </Button>
-                      )}
-                      <Button
-                        variant="danger"
-                        disabled={u.id === currentUserId}
-                        onClick={() => onDelete(u.id)}
-                        style={{ padding: "5px 10px", fontSize: 12.5 }}
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5 }}>
+            <thead>
+              <tr style={{ textAlign: "left", color: COLORS.muted, borderBottom: `1px solid ${COLORS.border}` }}>
+                <th style={{ padding: "9px 8px", fontWeight: 500 }}>Full Name</th>
+                <th style={{ padding: "9px 8px", fontWeight: 500 }}>Username</th>
+                <th style={{ padding: "9px 8px", fontWeight: 500 }}>Dept / Batch</th>
+                <th style={{ padding: "9px 8px", fontWeight: 500 }}>Email & Phone</th>
+                <th style={{ padding: "9px 8px", fontWeight: 500 }}>Role</th>
+                <th style={{ padding: "9px 8px", textAlign: "right" }}>Manage</th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map((u) => {
+                const isPending = u.role === "pending_organizer" || u.organizerPending;
+                return (
+                  <tr key={u.id} style={{ borderBottom: `1px solid ${COLORS.border}` }}>
+                    <td style={{ padding: "10px 8px", fontWeight: 600, color: COLORS.text }}>
+                      {u.full_name || u.username || u.name}
+                    </td>
+                    <td style={{ padding: "10px 8px", color: COLORS.muted }}>@{u.username}</td>
+                    <td style={{ padding: "10px 8px", color: COLORS.muted }}>
+                      {u.department || "—"} {u.batch ? `(${u.batch})` : ""}
+                    </td>
+                    <td style={{ padding: "10px 8px", color: COLORS.muted }}>
+                      <div>{u.email}</div>
+                      {u.phone && <div style={{ fontSize: 12 }}>{u.phone}</div>}
+                    </td>
+                    <td style={{ padding: "10px 8px" }}>
+                      <span
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 500,
+                          color: isPending
+                            ? COLORS.warning
+                            : u.role === "organizer"
+                            ? COLORS.success
+                            : COLORS.primary,
+                          background: isPending
+                            ? COLORS.warningTint
+                            : u.role === "organizer"
+                            ? COLORS.successTint
+                            : COLORS.primaryTint,
+                          padding: "3px 9px",
+                          borderRadius: 5,
+                          textTransform: "capitalize",
+                        }}
                       >
-                        <Trash2 size={12} /> {u.id === currentUserId ? "Current user" : "Remove"}
-                      </Button>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                        {isPending ? "Pending Organizer" : u.role}
+                      </span>
+                    </td>
+                    <td style={{ padding: "10px 8px", textAlign: "right" }}>
+                      <div style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+                        {u.role !== "admin" && (
+                          <Button
+                            variant="secondary"
+                            onClick={() =>
+                              onChangeRole(u, u.role === "organizer" ? "participant" : "organizer")
+                            }
+                            style={{ padding: "5px 10px", fontSize: 12 }}
+                          >
+                            {u.role === "organizer" ? "Revoke Organizer" : "Make Organizer"}
+                          </Button>
+                        )}
+                        <Button
+                          variant="danger"
+                          disabled={u.id === currentUserId}
+                          onClick={() => onDelete(u.id)}
+                          style={{ padding: "5px 10px", fontSize: 12.5 }}
+                        >
+                          <Trash2 size={12} /> {u.id === currentUserId ? "Current user" : "Remove"}
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
         {users.length === 0 && (
           <div style={{ padding: 30, textAlign: "center", color: COLORS.faint }}>No users found.</div>
         )}
@@ -1168,7 +1524,7 @@ function Dashboard({
   onRequestOrganizer,
   onOpenUsersTab,
   onSelectEvent,
-  onShowQr,
+  onShowEventQr,
   onExportCalendar,
 }) {
   if (role === "admin") {
@@ -1218,9 +1574,14 @@ function Dashboard({
         </div>
         <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: 18 }}>
           <h2 style={{ fontFamily: FONT, fontSize: 15, fontWeight: 600, margin: "0 0 12px", color: COLORS.text }}>
-            All events
+            All events (Click 'Registration QR' to get the student signup QR code)
           </h2>
-          <EventTable events={events} onSelectEvent={onSelectEvent} onExportCalendar={onExportCalendar} />
+          <EventTable
+            events={events}
+            onSelectEvent={onSelectEvent}
+            onShowEventQr={onShowEventQr}
+            onExportCalendar={onExportCalendar}
+          />
         </div>
       </div>
     );
@@ -1251,9 +1612,14 @@ function Dashboard({
         </div>
         <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: 18 }}>
           <h2 style={{ fontFamily: FONT, fontSize: 15, fontWeight: 600, margin: "0 0 12px", color: COLORS.text }}>
-            My events
+            My events & Registration QR codes
           </h2>
-          <EventTable events={mine} onSelectEvent={onSelectEvent} onExportCalendar={onExportCalendar} />
+          <EventTable
+            events={mine}
+            onSelectEvent={onSelectEvent}
+            onShowEventQr={onShowEventQr}
+            onExportCalendar={onExportCalendar}
+          />
         </div>
       </div>
     );
@@ -1304,13 +1670,13 @@ function Dashboard({
         }}
       >
         <StatCard label="Registered events" value={myEvents.length} />
-        <StatCard label="Digital QR tickets" value={myEvents.length} />
+        <StatCard label="Department" value={user?.department || "Student"} subtext={user?.batch ? `Batch ${user.batch}` : ""} />
       </div>
       <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: 18 }}>
         <h2 style={{ fontFamily: FONT, fontSize: 15, fontWeight: 600, margin: "0 0 12px", color: COLORS.text }}>
-          My registrations & digital passes
+          My registrations
         </h2>
-        <EventTable events={myEvents} onShowQr={onShowQr} onExportCalendar={onExportCalendar} />
+        <EventTable events={myEvents} onExportCalendar={onExportCalendar} />
       </div>
     </div>
   );
@@ -1332,7 +1698,7 @@ function Sidebar({ user, role, isPendingOrganizer, pendingCount, page, setPage, 
   return (
     <div
       style={{
-        width: 220,
+        width: 225,
         flexShrink: 0,
         background: COLORS.surface,
         borderRight: `1px solid ${COLORS.border}`,
@@ -1422,20 +1788,26 @@ function Sidebar({ user, role, isPendingOrganizer, pendingCount, page, setPage, 
           }}
         >
           {apiConnected ? <Wifi size={13} /> : <WifiOff size={13} />}
-          {apiConnected ? "Django API Connected" : "Local Demo Mode"}
+          {apiConnected ? "Live Server Connected" : "Offline Preview"}
         </div>
 
         <div style={{ padding: "0 8px" }}>
           <div style={{ fontSize: 12, color: COLORS.faint }}>Signed in as</div>
           <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.text, marginTop: 1 }}>
-            {user?.username || "User"}
+            {user?.full_name || user?.username || "User"}
           </div>
+          {user?.department && (
+            <div style={{ fontSize: 11.5, color: COLORS.muted }}>
+              {user.department} {user.batch ? `• Batch ${user.batch}` : ""}
+            </div>
+          )}
           <div
             style={{
               fontSize: 11.5,
-              color: isPendingOrganizer ? COLORS.warning : COLORS.muted,
+              color: isPendingOrganizer ? COLORS.warning : COLORS.primary,
               textTransform: "capitalize",
-              fontWeight: isPendingOrganizer ? 600 : 400,
+              fontWeight: 600,
+              marginTop: 1,
             }}
           >
             {isPendingOrganizer ? "Participant (Organizer Pending)" : role}
@@ -1472,15 +1844,30 @@ export default function EventHub() {
   const [apiConnected, setApiConnected] = useState(savedSession?.apiConnected ?? true);
 
   const [pendingOrganizers, setPendingOrganizers] = useState(() =>
-    loadStringList(PENDING_ORG_STORAGE_KEY, ["robotics_club"])
+    loadJsonStorage(PENDING_ORG_STORAGE_KEY, [])
   );
   const [approvedOrganizers, setApprovedOrganizers] = useState(() =>
-    loadStringList(APPROVED_ORG_STORAGE_KEY, ["testorganizer"])
+    loadJsonStorage(APPROVED_ORG_STORAGE_KEY, ["testorganizer"])
+  );
+  const [userProfiles, setUserProfiles] = useState(() =>
+    loadJsonStorage(USER_PROFILES_STORAGE_KEY, {
+      tahsin: {
+        full_name: "Obidul Mostafa Tahsin",
+        phone: "01800000000",
+        batch: "51st",
+        department: "CSE",
+      },
+    })
   );
 
-  const [authTab, setAuthTab] = useState("login");
+  // If a student scans an Event Registration QR code (?register_event=<id>), track that target event ID
+  const [qrTargetEventId, setQrTargetEventId] = useState(() => getInitialQrEventId());
+
+  const [authTab, setAuthTab] = useState(() => (getInitialQrEventId() ? "register" : "login"));
   const [authError, setAuthError] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [signupRole, setSignupRole] = useState("participant");
 
   const [page, setPage] = useState("home");
   const [venues, setVenues] = useState(INITIAL_VENUES);
@@ -1495,7 +1882,7 @@ export default function EventHub() {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
   const [viewingEvent, setViewingEvent] = useState(null);
-  const [qrTicketEvent, setQrTicketEvent] = useState(null);
+  const [organizerQrEvent, setOrganizerQrEvent] = useState(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingEvent, setEditingEvent] = useState(null);
   const [formError, setFormError] = useState("");
@@ -1523,6 +1910,7 @@ export default function EventHub() {
 
   const enrichedUsers = useMemo(() => {
     return users.map((u) => {
+      const profile = userProfiles[u.username] || {};
       const isPending =
         (u.role === "pending_organizer" || pendingOrganizers.includes(u.username)) &&
         !approvedOrganizers.includes(u.username) &&
@@ -1530,16 +1918,25 @@ export default function EventHub() {
       const isApprovedOrg = approvedOrganizers.includes(u.username) || (u.role === "organizer" && !isPending);
       return {
         ...u,
+        full_name: u.full_name || profile.full_name || u.first_name || u.username,
+        phone: u.phone || profile.phone || "",
+        batch: u.batch || profile.batch || "",
+        department: u.department || profile.department || "",
         role: u.role === "admin" ? "admin" : isPending ? "pending_organizer" : isApprovedOrg ? "organizer" : "participant",
         organizerPending: isPending,
       };
     });
-  }, [users, pendingOrganizers, approvedOrganizers]);
+  }, [users, userProfiles, pendingOrganizers, approvedOrganizers]);
 
   const pendingCount = useMemo(
     () => enrichedUsers.filter((u) => u.role === "pending_organizer" || u.organizerPending).length,
     [enrichedUsers]
   );
+
+  const qrScannedEvent = useMemo(() => {
+    if (!qrTargetEventId) return null;
+    return events.find((e) => Number(e.id) === Number(qrTargetEventId)) || null;
+  }, [events, qrTargetEventId]);
 
   const showToast = useCallback((msg) => {
     setToast(msg);
@@ -1560,7 +1957,7 @@ export default function EventHub() {
         "Content-Type": "application/json",
         ...(options.headers || {}),
       };
-      if (activeToken) {
+      if (activeToken && activeToken !== "demo-token") {
         headers.Authorization = `Bearer ${activeToken}`;
       }
       const res = await fetch(`${API_BASE}${path}`, {
@@ -1634,7 +2031,7 @@ export default function EventHub() {
 
   const syncFromBackend = useCallback(
     async (activeToken, activeUser) => {
-      if (!activeToken) return;
+      if (!activeToken || activeToken === "demo-token") return;
       setRefreshing(true);
       try {
         const [venuesData, eventsData, myRegsData] = await Promise.all([
@@ -1671,6 +2068,22 @@ export default function EventHub() {
     [apiFetch, normalizeEvent]
   );
 
+  // Also fetch public events list if a student arrives via QR scan link so we can show the event title on the login page
+  useEffect(() => {
+    if (!user && qrTargetEventId) {
+      fetch(`${API_BASE}/events/`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (!data) return;
+          const rawEvents = Array.isArray(data) ? data : data?.results || [];
+          if (rawEvents.length) {
+            setEvents(rawEvents.map((ev) => normalizeEvent(ev, INITIAL_VENUES)));
+          }
+        })
+        .catch(() => {});
+    }
+  }, [user, qrTargetEventId, normalizeEvent]);
+
   useEffect(() => {
     if (token && user && apiConnected) {
       syncFromBackend(token, user);
@@ -1701,19 +2114,27 @@ export default function EventHub() {
       });
       const me = await apiFetch("/auth/me/", {}, tokens.access);
       const effectiveRole = me.username === "tahsin" && me.role === "participant" ? "admin" : me.role;
-      const normalizedUser = { ...me, role: effectiveRole };
+      const savedProf = userProfiles[me.username] || {};
+      const normalizedUser = {
+        ...me,
+        role: effectiveRole,
+        full_name: me.full_name || savedProf.full_name || me.username,
+        phone: me.phone || savedProf.phone || "",
+        batch: me.batch || savedProf.batch || "",
+        department: me.department || savedProf.department || "",
+      };
 
       setToken(tokens.access);
       setUser(normalizedUser);
       setApiConnected(true);
       saveSession({ access: tokens.access, refresh: tokens.refresh, user: normalizedUser, apiConnected: true });
       setPage("home");
-      showToast(`Signed in as ${normalizedUser.username}`);
+      showToast(`Signed in as ${normalizedUser.full_name || normalizedUser.username}`);
       await syncFromBackend(tokens.access, normalizedUser);
     } catch (err) {
       setAuthError(
         err.message === "Failed to fetch"
-          ? "Could not reach Django server at http://127.0.0.1:8000. Make sure 'python manage.py runserver' is running, or click one of the Demo Mode buttons below."
+          ? "Could not reach the backend server. Please check your internet connection or server status."
           : err.message
       );
     } finally {
@@ -1725,27 +2146,51 @@ export default function EventHub() {
     e.preventDefault();
     setAuthError("");
     setAuthLoading(true);
+    const fullName = e.target.full_name.value.trim();
     const username = e.target.username.value.trim();
     const email = e.target.email.value.trim();
+    const phone = e.target.phone.value.trim();
+    const batch = e.target.batch.value.trim();
+    const department = e.target.department.value;
     const password = e.target.password.value;
-    const requestedAccountType = e.target.role.value; // "participant" or "organizer_request"
+    const requestedAccountType = e.target.role.value;
     const wantsOrganizer = requestedAccountType === "organizer_request";
 
+    const profileData = {
+      full_name: fullName,
+      phone,
+      batch,
+      department,
+    };
+
     try {
-      // Register as participant initially on the server so the user cannot create events until Admin approves
       const data = await apiFetch("/auth/register/", {
         method: "POST",
-        body: JSON.stringify({ username, email, password, role: "participant" }),
+        body: JSON.stringify({
+          username,
+          email,
+          password,
+          role: "participant",
+          full_name: fullName,
+          phone,
+          batch,
+          department,
+        }),
       });
+
+      const nextProfiles = { ...userProfiles, [username]: profileData };
+      setUserProfiles(nextProfiles);
+      saveJsonStorage(USER_PROFILES_STORAGE_KEY, nextProfiles);
 
       if (wantsOrganizer) {
         const nextPending = Array.from(new Set([...pendingOrganizers, username]));
         setPendingOrganizers(nextPending);
-        saveStringList(PENDING_ORG_STORAGE_KEY, nextPending);
+        saveJsonStorage(PENDING_ORG_STORAGE_KEY, nextPending);
       }
 
       const createdUser = {
         ...data.user,
+        ...profileData,
         role: wantsOrganizer ? "pending_organizer" : data.user.role,
       };
 
@@ -1757,16 +2202,16 @@ export default function EventHub() {
       showToast(
         wantsOrganizer
           ? `Account created! Your Organizer request has been sent to Admin for approval.`
-          : `Account created! Welcome, ${createdUser.username}`
+          : `Welcome to EventHub, ${fullName}!`
       );
       if (wantsOrganizer) {
-        pushNotification(`Organizer application submitted for @${username}. Waiting for Admin approval.`);
+        pushNotification(`Organizer application submitted for ${fullName} (@${username}). Waiting for Admin approval.`);
       }
       await syncFromBackend(data.access, createdUser);
     } catch (err) {
       setAuthError(
         err.message === "Failed to fetch"
-          ? "Could not reach Django server at http://127.0.0.1:8000. Make sure 'python manage.py runserver' is running, or use Demo Mode below."
+          ? "Could not reach the backend server. Please verify the backend is online."
           : err.message
       );
     } finally {
@@ -1778,7 +2223,7 @@ export default function EventHub() {
     if (!user) return;
     const nextPending = Array.from(new Set([...pendingOrganizers, user.username]));
     setPendingOrganizers(nextPending);
-    saveStringList(PENDING_ORG_STORAGE_KEY, nextPending);
+    saveJsonStorage(PENDING_ORG_STORAGE_KEY, nextPending);
     setUsers((prev) =>
       prev.map((u) => (u.username === user.username ? { ...u, role: "pending_organizer", organizerPending: true } : u))
     );
@@ -1795,20 +2240,20 @@ export default function EventHub() {
           body: JSON.stringify({ role: "organizer" }),
         });
       } catch {
-        // Fallback if backend endpoint not yet added to urls.py
+        // Fallback if backend endpoint not yet added
       }
     }
     const nextPending = pendingOrganizers.filter((x) => x !== uname);
     const nextApproved = Array.from(new Set([...approvedOrganizers, uname]));
     setPendingOrganizers(nextPending);
     setApprovedOrganizers(nextApproved);
-    saveStringList(PENDING_ORG_STORAGE_KEY, nextPending);
-    saveStringList(APPROVED_ORG_STORAGE_KEY, nextApproved);
+    saveJsonStorage(PENDING_ORG_STORAGE_KEY, nextPending);
+    saveJsonStorage(APPROVED_ORG_STORAGE_KEY, nextApproved);
 
     setUsers((prev) =>
       prev.map((u) => (u.id === targetUser.id ? { ...u, role: "organizer", organizerPending: false } : u))
     );
-    showToast(`Approved ${uname} as an Organizer!`);
+    showToast(`Approved ${targetUser.full_name || uname} as an Organizer!`);
     pushNotification(`Admin approved @${uname} as an Organizer.`);
   }
 
@@ -1821,12 +2266,12 @@ export default function EventHub() {
           body: JSON.stringify({ role: "participant" }),
         });
       } catch {
-        // Fallback if backend endpoint not yet added
+        // Fallback
       }
     }
     const nextPending = pendingOrganizers.filter((x) => x !== uname);
     setPendingOrganizers(nextPending);
-    saveStringList(PENDING_ORG_STORAGE_KEY, nextPending);
+    saveJsonStorage(PENDING_ORG_STORAGE_KEY, nextPending);
     setUsers((prev) =>
       prev.map((u) => (u.id === targetUser.id ? { ...u, role: "participant", organizerPending: false } : u))
     );
@@ -1853,27 +2298,12 @@ export default function EventHub() {
     const nextPending = pendingOrganizers.filter((x) => x !== uname);
     setApprovedOrganizers(nextApproved);
     setPendingOrganizers(nextPending);
-    saveStringList(APPROVED_ORG_STORAGE_KEY, nextApproved);
-    saveStringList(PENDING_ORG_STORAGE_KEY, nextPending);
+    saveJsonStorage(APPROVED_ORG_STORAGE_KEY, nextApproved);
+    saveJsonStorage(PENDING_ORG_STORAGE_KEY, nextPending);
     setUsers((prev) =>
       prev.map((u) => (u.id === targetUser.id ? { ...u, role: "participant", organizerPending: false } : u))
     );
     showToast(`Updated ${uname} role to Participant`);
-  }
-
-  function handleDemoLogin(demoRole) {
-    const demoUser =
-      demoRole === "admin"
-        ? { id: 1, username: "tahsin", email: "obidulmostafa9@gmail.com", role: "admin" }
-        : demoRole === "organizer"
-        ? { id: 2, username: "testorganizer", email: "testorg@student.edu", role: "organizer" }
-        : { id: 3, username: "demo_student", email: "demo@student.edu", role: "participant" };
-    setToken("demo-token");
-    setUser(demoUser);
-    setApiConnected(false);
-    saveSession({ access: "demo-token", user: demoUser, apiConnected: false });
-    setPage("home");
-    showToast(`Entered Demo Mode as ${demoUser.role}`);
   }
 
   function handleLogout() {
@@ -1881,6 +2311,18 @@ export default function EventHub() {
     setUser(null);
     saveSession(null);
     setPage("home");
+  }
+
+  function clearQrUrlParam() {
+    setQrTargetEventId(null);
+    try {
+      if (typeof window !== "undefined" && window.history?.replaceState) {
+        const cleanUrl = window.location.pathname;
+        window.history.replaceState({}, "", cleanUrl);
+      }
+    } catch {
+      // Ignore history errors
+    }
   }
 
   async function handleRegisterEvent(eventId) {
@@ -1895,8 +2337,8 @@ export default function EventHub() {
           body: JSON.stringify({ event: eventId }),
         });
         await syncFromBackend(token, user);
-        showToast(`Registered for "${ev.title}" — QR Ticket ready!`);
-        pushNotification(`Registered for "${ev.title}" on ${ev.date}. Click 'QR Ticket' to view your entry pass.`);
+        showToast(`Registered for "${ev.title}"!`);
+        pushNotification(`Registered for "${ev.title}" on ${ev.date}.`);
       } catch (err) {
         showToast(err.message);
       } finally {
@@ -1920,7 +2362,11 @@ export default function EventHub() {
                 {
                   id: user.id,
                   username: user.username,
+                  full_name: user.full_name || user.username,
                   email: user.email,
+                  phone: user.phone || "",
+                  batch: user.batch || "",
+                  department: user.department || "",
                   registered_at: new Date().toISOString().slice(0, 10),
                 },
               ],
@@ -1929,8 +2375,8 @@ export default function EventHub() {
       )
     );
     setMyEventIds([...myEventIds, eventId]);
-    showToast(`Registered for "${ev.title}" — QR Ticket ready!`);
-    pushNotification(`Registered for "${ev.title}" on ${ev.date}. Click 'QR Ticket' to view your entry pass.`);
+    showToast(`Registered for "${ev.title}"!`);
+    pushNotification(`Registered for "${ev.title}" on ${ev.date}.`);
     setBusyEventId(null);
   }
 
@@ -2042,7 +2488,7 @@ export default function EventHub() {
       const venueObj = await resolveVenueId(venueInput, capacity);
 
       if (apiConnected) {
-        await apiFetch("/events/", {
+        const createdRaw = await apiFetch("/events/", {
           method: "POST",
           body: JSON.stringify({
             title,
@@ -2057,8 +2503,10 @@ export default function EventHub() {
         });
         await syncFromBackend(token, user);
         setShowCreateForm(false);
-        showToast("Event created on server");
-        pushNotification(`New event published: "${title}" on ${date}.`);
+        const createdNorm = normalizeEvent(createdRaw, [...venues, venueObj]);
+        setOrganizerQrEvent(createdNorm);
+        showToast("Event created! Registration QR code generated.");
+        pushNotification(`New event published: "${title}" on ${date}. Registration QR is ready to share.`);
         return;
       }
 
@@ -2088,8 +2536,9 @@ export default function EventHub() {
       };
       setEvents([newEvent, ...events]);
       setShowCreateForm(false);
-      showToast("Event created");
-      pushNotification(`New event published: "${title}" on ${date}.`);
+      setOrganizerQrEvent(newEvent);
+      showToast("Event created! Registration QR code generated.");
+      pushNotification(`New event published: "${title}" on ${date}. Registration QR is ready to share.`);
     } catch (err) {
       setFormError(err.message);
     }
@@ -2204,6 +2653,11 @@ export default function EventHub() {
     showToast(`Opened "${event.title}" in Google Calendar`);
   }
 
+  function handleCopyRegistrationLink(url) {
+    copyTextToClipboard(url);
+    showToast("Event registration link copied to clipboard!");
+  }
+
   function handleExportCsv() {
     const headers = ["ID", "Title", "Category", "Date", "Time", "Venue", "Registered", "Capacity", "Deadline", "Organizer"];
     const rows = events.map((e) => [
@@ -2230,193 +2684,563 @@ export default function EventHub() {
   }
 
   if (!user) {
+    const iconInputWrap = { position: "relative", display: "flex", alignItems: "center" };
+    const leftIconStyle = { position: "absolute", left: 12, color: "#94A3B8", pointerEvents: "none" };
+    const authInputStyle = {
+      ...inputStyle,
+      padding: "10px 12px 10px 36px",
+      borderRadius: 9,
+      border: "1px solid #CBD5E1",
+      background: "#F8FAFC",
+      fontSize: 13.5,
+      transition: "all 0.15s ease",
+    };
+
     return (
       <div
         style={{
           minHeight: "100vh",
-          background: COLORS.bg,
+          background: "linear-gradient(135deg, #0F172A 0%, #1E293B 50%, #0F172A 100%)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           fontFamily: FONT,
-          padding: 20,
+          padding: "24px 16px",
         }}
       >
-        <div style={{ width: "min(420px, 100%)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center", marginBottom: 22 }}>
-            <div
-              style={{
-                width: 32,
-                height: 32,
-                borderRadius: 8,
-                background: COLORS.primary,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <Ticket size={17} color="#fff" />
-            </div>
-            <span style={{ fontFamily: FONT, fontSize: 19, fontWeight: 700, color: COLORS.text }}>EventHub</span>
-          </div>
-
+        <div
+          style={{
+            width: "min(1020px, 100%)",
+            background: COLORS.surface,
+            borderRadius: 20,
+            overflow: "hidden",
+            boxShadow: "0 25px 70px rgba(0, 0, 0, 0.45)",
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))",
+            border: "1px solid rgba(255, 255, 255, 0.1)",
+          }}
+        >
+          {/* Left Showcase Panel */}
           <div
             style={{
-              background: COLORS.surface,
-              border: `1px solid ${COLORS.border}`,
-              borderRadius: 12,
-              padding: 26,
+              background: "linear-gradient(155deg, #1E3A8A 0%, #2451DB 55%, #1D4ED8 100%)",
+              color: "#FFFFFF",
+              padding: "42px 36px",
+              display: "flex",
+              flexDirection: "column",
+              justifyContent: "space-between",
+              position: "relative",
+              overflow: "hidden",
             }}
           >
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                background: COLORS.bg,
-                padding: 4,
-                borderRadius: 8,
-                marginBottom: 18,
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => {
-                  setAuthError("");
-                  setAuthTab("login");
-                }}
+            <div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 32 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <div
+                    style={{
+                      width: 38,
+                      height: 38,
+                      borderRadius: 10,
+                      background: "rgba(255, 255, 255, 0.18)",
+                      backdropFilter: "blur(8px)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      border: "1px solid rgba(255, 255, 255, 0.25)",
+                    }}
+                  >
+                    <Ticket size={20} color="#FFFFFF" />
+                  </div>
+                  <span style={{ fontSize: 21, fontWeight: 800, letterSpacing: "-0.02em" }}>EventHub</span>
+                </div>
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 5,
+                    fontSize: 11,
+                    fontWeight: 600,
+                    padding: "5px 10px",
+                    borderRadius: 20,
+                    background: "rgba(255, 255, 255, 0.15)",
+                    border: "1px solid rgba(255, 255, 255, 0.2)",
+                    letterSpacing: "0.03em",
+                  }}
+                >
+                  <Sparkles size={12} /> CAMPUS PORTAL
+                </span>
+              </div>
+
+              <h2
                 style={{
-                  padding: "8px 10px",
-                  borderRadius: 6,
-                  border: "none",
-                  background: authTab === "login" ? COLORS.surface : "transparent",
-                  color: authTab === "login" ? COLORS.text : COLORS.muted,
-                  fontFamily: FONT,
-                  fontSize: 13,
-                  fontWeight: 600,
-                  cursor: "pointer",
+                  fontSize: 28,
+                  fontWeight: 800,
+                  lineHeight: 1.22,
+                  margin: "0 0 12px",
+                  letterSpacing: "-0.02em",
                 }}
               >
-                Sign in
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setAuthError("");
-                  setAuthTab("register");
-                }}
+                Discover, organize, and manage campus events in one place.
+              </h2>
+              <p
                 style={{
-                  padding: "8px 10px",
-                  borderRadius: 6,
-                  border: "none",
-                  background: authTab === "register" ? COLORS.surface : "transparent",
-                  color: authTab === "register" ? COLORS.text : COLORS.muted,
-                  fontFamily: FONT,
-                  fontSize: 13,
-                  fontWeight: 600,
-                  cursor: "pointer",
+                  fontSize: 14,
+                  color: "rgba(255, 255, 255, 0.84)",
+                  lineHeight: 1.6,
+                  margin: "0 0 28px",
                 }}
               >
-                Create account
-              </button>
+                A unified platform for students, club organizers, and administrators with QR code event registration
+                and automated venue scheduling.
+              </p>
+
+              <div style={{ display: "grid", gap: 12 }}>
+                {[
+                  {
+                    icon: QrCode,
+                    title: "QR Code Event Registration",
+                    desc: "Scan an event's QR poster to jump straight to registration.",
+                  },
+                  {
+                    icon: ShieldCheck,
+                    title: "Verified Organizer Workflow",
+                    desc: "Role-based access with Admin approval for club organizers.",
+                  },
+                  {
+                    icon: CalendarPlus,
+                    title: "One-Click Google Calendar",
+                    desc: "Sync workshops, competitions, and career fairs in one click.",
+                  },
+                ].map((item, idx) => {
+                  const FeatureIcon = item.icon;
+                  return (
+                    <div
+                      key={idx}
+                      style={{
+                        display: "flex",
+                        alignItems: "flex-start",
+                        gap: 12,
+                        padding: "12px 14px",
+                        borderRadius: 12,
+                        background: "rgba(255, 255, 255, 0.1)",
+                        border: "1px solid rgba(255, 255, 255, 0.14)",
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: 32,
+                          height: 32,
+                          borderRadius: 8,
+                          background: "rgba(255, 255, 255, 0.18)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          flexShrink: 0,
+                          marginTop: 1,
+                        }}
+                      >
+                        <FeatureIcon size={16} color="#FFFFFF" />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 2 }}>{item.title}</div>
+                        <div style={{ fontSize: 12, color: "rgba(255, 255, 255, 0.78)", lineHeight: 1.4 }}>
+                          {item.desc}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
+          </div>
 
-            <ErrorBanner message={authError} />
-
-            {authTab === "login" ? (
-              <form onSubmit={handleLogin}>
-                <Field label="Username">
-                  <input
-                    name="username"
-                    type="text"
-                    defaultValue="tahsin"
-                    placeholder="e.g. tahsin or testorganizer"
-                    required
-                    style={inputStyle}
-                  />
-                </Field>
-                <Field label="Password">
-                  <input
-                    name="password"
-                    type="password"
-                    placeholder="Enter your Django password"
-                    required
-                    style={inputStyle}
-                  />
-                </Field>
-                <Button
-                  type="submit"
-                  variant="primary"
-                  disabled={authLoading}
-                  style={{ width: "100%", padding: 11, marginTop: 4 }}
+          {/* Right Authentication Form Panel */}
+          <div
+            style={{
+              padding: "36px 36px",
+              display: "flex",
+              flexDirection: "column",
+              justifyContent: "center",
+              background: "#FFFFFF",
+            }}
+          >
+            <div>
+              {/* If the user scanned an Event Registration QR code, show the targeted event banner */}
+              {qrTargetEventId && (
+                <div
+                  style={{
+                    background: COLORS.primaryTint,
+                    border: `1px solid ${COLORS.primary}`,
+                    borderRadius: 10,
+                    padding: "11px 14px",
+                    marginBottom: 18,
+                    fontSize: 12.5,
+                    color: COLORS.text,
+                    lineHeight: 1.45,
+                  }}
                 >
-                  {authLoading ? "Connecting to 127.0.0.1:8000..." : "Sign in"}
-                </Button>
-                <p style={{ fontSize: 12, color: COLORS.muted, marginTop: 12, marginBottom: 0, lineHeight: 1.45 }}>
-                  Organizers & participants sign in here with their username and password. New organizer applicants
-                  are activated once approved by an Admin.
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, color: COLORS.primary, fontWeight: 700, marginBottom: 2 }}>
+                    <QrCode size={15} /> QR Event Registration Invite
+                  </div>
+                  {qrScannedEvent ? (
+                    <span>
+                      Sign in or create an account below to register for <strong>{qrScannedEvent.title}</strong> (
+                      {qrScannedEvent.date} &middot; {qrScannedEvent.venueName}).
+                    </span>
+                  ) : (
+                    <span>
+                      Sign in or create a new student account below to complete your registration for Event #{qrTargetEventId}.
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Segmented Tab Switcher */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  background: "#F1F5F9",
+                  padding: 4,
+                  borderRadius: 10,
+                  marginBottom: 20,
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthError("");
+                    setAuthTab("login");
+                  }}
+                  style={{
+                    padding: "9px 12px",
+                    borderRadius: 8,
+                    border: "none",
+                    background: authTab === "login" ? "#FFFFFF" : "transparent",
+                    color: authTab === "login" ? "#0F172A" : "#64748B",
+                    boxShadow: authTab === "login" ? "0 2px 8px rgba(15, 23, 42, 0.08)" : "none",
+                    fontFamily: FONT,
+                    fontSize: 13.5,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  Sign in
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthError("");
+                    setAuthTab("register");
+                  }}
+                  style={{
+                    padding: "9px 12px",
+                    borderRadius: 8,
+                    border: "none",
+                    background: authTab === "register" ? "#FFFFFF" : "transparent",
+                    color: authTab === "register" ? "#0F172A" : "#64748B",
+                    boxShadow: authTab === "register" ? "0 2px 8px rgba(15, 23, 42, 0.08)" : "none",
+                    fontFamily: FONT,
+                    fontSize: 13.5,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  Create account
+                </button>
+              </div>
+
+              <div style={{ marginBottom: 16 }}>
+                <h1
+                  style={{
+                    fontFamily: FONT,
+                    fontSize: 21,
+                    fontWeight: 800,
+                    color: "#0F172A",
+                    margin: "0 0 4px",
+                    letterSpacing: "-0.01em",
+                  }}
+                >
+                  {authTab === "login" ? "Welcome back" : "Create your account"}
+                </h1>
+                <p style={{ fontFamily: FONT, fontSize: 13, color: "#64748B", margin: 0 }}>
+                  {authTab === "login"
+                    ? "Enter your username and password to access your dashboard."
+                    : "Fill in your official student or organizer details below."}
                 </p>
-              </form>
-            ) : (
-              <form onSubmit={handleRegisterAccount}>
-                <Field label="Username">
-                  <input name="username" type="text" placeholder="e.g. ieee_branch" required style={inputStyle} />
-                </Field>
-                <Field label="Email">
-                  <input name="email" type="email" placeholder="club@university.edu" required style={inputStyle} />
-                </Field>
-                <Field label="Password (min 6 chars)">
-                  <input name="password" type="password" minLength={6} required style={inputStyle} />
-                </Field>
-                <Field label="Account type">
-                  <select name="role" defaultValue="participant" style={inputStyle}>
-                    <option value="participant">Participant (Browse & register immediately)</option>
-                    <option value="organizer_request">Organizer (Requires Admin approval)</option>
-                  </select>
-                </Field>
-                <Button
-                  type="submit"
-                  variant="primary"
-                  disabled={authLoading}
-                  style={{ width: "100%", padding: 11, marginTop: 4 }}
-                >
-                  {authLoading ? "Creating account..." : "Create account"}
-                </Button>
-              </form>
-            )}
+              </div>
 
-            <div
-              style={{
-                borderTop: `1px solid ${COLORS.border}`,
-                marginTop: 18,
-                paddingTop: 14,
-              }}
-            >
-              <div style={{ fontSize: 12, color: COLORS.muted, textAlign: "center", marginBottom: 8 }}>
-                Previewing without the backend running? Launch instant demo mode:
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
-                <Button
-                  variant="secondary"
-                  onClick={() => handleDemoLogin("participant")}
-                  style={{ fontSize: 12, padding: "7px 8px" }}
-                >
-                  Participant
-                </Button>
-                <Button
-                  variant="secondary"
-                  onClick={() => handleDemoLogin("organizer")}
-                  style={{ fontSize: 12, padding: "7px 8px" }}
-                >
-                  Organizer
-                </Button>
-                <Button
-                  variant="secondary"
-                  onClick={() => handleDemoLogin("admin")}
-                  style={{ fontSize: 12, padding: "7px 8px" }}
-                >
-                  Admin
-                </Button>
-              </div>
+              <ErrorBanner message={authError} />
+
+              {authTab === "login" ? (
+                <form onSubmit={handleLogin}>
+                  <Field label="Username">
+                    <div style={iconInputWrap}>
+                      <UserIcon size={16} style={leftIconStyle} />
+                      <input
+                        name="username"
+                        type="text"
+                        placeholder="Enter your username"
+                        required
+                        style={authInputStyle}
+                      />
+                    </div>
+                  </Field>
+
+                  <Field label="Password">
+                    <div style={iconInputWrap}>
+                      <Lock size={16} style={leftIconStyle} />
+                      <input
+                        name="password"
+                        type={showPassword ? "text" : "password"}
+                        placeholder="Enter your password"
+                        required
+                        style={{ ...authInputStyle, paddingRight: 38 }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword((prev) => !prev)}
+                        style={{
+                          position: "absolute",
+                          right: 10,
+                          background: "none",
+                          border: "none",
+                          color: "#94A3B8",
+                          cursor: "pointer",
+                          padding: 4,
+                          display: "flex",
+                          alignItems: "center",
+                        }}
+                        title={showPassword ? "Hide password" : "Show password"}
+                      >
+                        {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                    </div>
+                  </Field>
+
+                  <Button
+                    type="submit"
+                    variant="primary"
+                    disabled={authLoading}
+                    style={{
+                      width: "100%",
+                      padding: "12px 16px",
+                      marginTop: 8,
+                      borderRadius: 9,
+                      fontSize: 14,
+                      fontWeight: 600,
+                      boxShadow: "0 4px 14px rgba(36, 81, 219, 0.3)",
+                    }}
+                  >
+                    {authLoading ? "Signing in..." : "Sign in to EventHub"} <ArrowRight size={15} />
+                  </Button>
+                </form>
+              ) : (
+                <form onSubmit={handleRegisterAccount}>
+                  <Field label="Select account type">
+                    <input type="hidden" name="role" value={signupRole} />
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                      {[
+                        {
+                          key: "participant",
+                          title: "Participant",
+                          sub: "Browse & book events",
+                          badge: "Instant access",
+                          badgeBg: COLORS.successTint,
+                          badgeColor: COLORS.success,
+                          icon: Ticket,
+                        },
+                        {
+                          key: "organizer_request",
+                          title: "Organizer",
+                          sub: "Create & host events",
+                          badge: "Admin approval",
+                          badgeBg: COLORS.warningTint,
+                          badgeColor: COLORS.warning,
+                          icon: ShieldCheck,
+                        },
+                      ].map((opt) => {
+                        const OptIcon = opt.icon;
+                        const selected = signupRole === opt.key;
+                        return (
+                          <button
+                            key={opt.key}
+                            type="button"
+                            onClick={() => setSignupRole(opt.key)}
+                            style={{
+                              textAlign: "left",
+                              padding: "9px 11px",
+                              borderRadius: 10,
+                              border: selected ? `2px solid ${COLORS.primary}` : "1px solid #CBD5E1",
+                              background: selected ? "#F0F5FF" : "#FFFFFF",
+                              cursor: "pointer",
+                              fontFamily: FONT,
+                              transition: "all 0.15s ease",
+                            }}
+                          >
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                              <OptIcon size={15} color={selected ? COLORS.primary : "#64748B"} />
+                              <span
+                                style={{
+                                  fontSize: 10,
+                                  fontWeight: 700,
+                                  padding: "2px 6px",
+                                  borderRadius: 4,
+                                  background: opt.badgeBg,
+                                  color: opt.badgeColor,
+                                }}
+                              >
+                                {opt.badge}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{opt.title}</div>
+                            <div style={{ fontSize: 11, color: "#64748B", marginTop: 1 }}>{opt.sub}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </Field>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                    <Field label="1. Full Name (Official)">
+                      <div style={iconInputWrap}>
+                        <UserIcon size={15} style={leftIconStyle} />
+                        <input
+                          name="full_name"
+                          type="text"
+                          placeholder="e.g. Obidul Mostafa"
+                          required
+                          style={authInputStyle}
+                        />
+                      </div>
+                    </Field>
+
+                    <Field label="2. Username">
+                      <div style={iconInputWrap}>
+                        <UserIcon size={15} style={leftIconStyle} />
+                        <input
+                          name="username"
+                          type="text"
+                          placeholder="e.g. tahsin_01"
+                          required
+                          style={authInputStyle}
+                        />
+                      </div>
+                    </Field>
+                  </div>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                    <Field label="3. Personal Email">
+                      <div style={iconInputWrap}>
+                        <Mail size={15} style={leftIconStyle} />
+                        <input
+                          name="email"
+                          type="email"
+                          placeholder="you@gmail.com"
+                          required
+                          style={authInputStyle}
+                        />
+                      </div>
+                    </Field>
+
+                    <Field label="4. Phone Number">
+                      <div style={iconInputWrap}>
+                        <Phone size={15} style={leftIconStyle} />
+                        <input
+                          name="phone"
+                          type="tel"
+                          placeholder="e.g. 017XXXXXXXX"
+                          required
+                          style={authInputStyle}
+                        />
+                      </div>
+                    </Field>
+                  </div>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                    <Field label="5. Batch">
+                      <div style={iconInputWrap}>
+                        <GraduationCap size={15} style={leftIconStyle} />
+                        <input
+                          name="batch"
+                          type="text"
+                          placeholder="e.g. 52nd / 2022"
+                          required
+                          style={authInputStyle}
+                        />
+                      </div>
+                    </Field>
+
+                    <Field label="6. Department">
+                      <div style={iconInputWrap}>
+                        <BookOpen size={15} style={leftIconStyle} />
+                        <select name="department" defaultValue="CSE" required style={authInputStyle}>
+                          {DEPARTMENTS.map((dept) => (
+                            <option key={dept} value={dept}>
+                              {dept}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </Field>
+                  </div>
+
+                  <Field label="Password (minimum 6 characters)">
+                    <div style={iconInputWrap}>
+                      <Lock size={15} style={leftIconStyle} />
+                      <input
+                        name="password"
+                        type={showPassword ? "text" : "password"}
+                        minLength={6}
+                        placeholder="Create a strong password"
+                        required
+                        style={{ ...authInputStyle, paddingRight: 38 }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword((prev) => !prev)}
+                        style={{
+                          position: "absolute",
+                          right: 10,
+                          background: "none",
+                          border: "none",
+                          color: "#94A3B8",
+                          cursor: "pointer",
+                          padding: 4,
+                          display: "flex",
+                          alignItems: "center",
+                        }}
+                      >
+                        {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                      </button>
+                    </div>
+                  </Field>
+
+                  <Button
+                    type="submit"
+                    variant="primary"
+                    disabled={authLoading}
+                    style={{
+                      width: "100%",
+                      padding: "11px 16px",
+                      marginTop: 4,
+                      borderRadius: 9,
+                      fontSize: 14,
+                      fontWeight: 600,
+                      boxShadow: "0 4px 14px rgba(36, 81, 219, 0.3)",
+                    }}
+                  >
+                    {authLoading
+                      ? "Creating account..."
+                      : signupRole === "organizer_request"
+                      ? "Submit Organizer Application"
+                      : "Create Account & Continue"}{" "}
+                    <ArrowRight size={15} />
+                  </Button>
+                </form>
+              )}
             </div>
           </div>
         </div>
@@ -2661,7 +3485,7 @@ export default function EventHub() {
                     onRegister={handleRegisterEvent}
                     onCancel={handleCancelRegistration}
                     onView={setViewingEvent}
-                    onShowQr={setQrTicketEvent}
+                    onShowEventQr={setOrganizerQrEvent}
                     onExportCalendar={handleExportCalendar}
                     onEdit={(event) => {
                       setFormError("");
@@ -2690,7 +3514,7 @@ export default function EventHub() {
               onRequestOrganizer={handleRequestOrganizerFromProfile}
               onOpenUsersTab={() => setPage("users")}
               onSelectEvent={setViewingEvent}
-              onShowQr={setQrTicketEvent}
+              onShowEventQr={setOrganizerQrEvent}
               onExportCalendar={handleExportCalendar}
             />
           )}
@@ -2716,12 +3540,29 @@ export default function EventHub() {
         </main>
       </div>
 
-      {qrTicketEvent && (
-        <TicketModal
-          event={qrTicketEvent}
+      {/* Organizer Event Registration QR Code Modal (pops up automatically on event creation or when clicking Registration QR) */}
+      {organizerQrEvent && (
+        <EventRegistrationQrModal
+          event={organizerQrEvent}
+          onClose={() => setOrganizerQrEvent(null)}
+          onCopyLink={handleCopyRegistrationLink}
+          onSimulateScan={(ev) => {
+            setOrganizerQrEvent(null);
+            setQrTargetEventId(ev.id);
+          }}
+        />
+      )}
+
+      {/* Student QR Scan Registration Landing Modal */}
+      {qrScannedEvent && (
+        <QrScannedRegistrationModal
+          event={qrScannedEvent}
           user={user}
-          onClose={() => setQrTicketEvent(null)}
-          onExportCalendar={handleExportCalendar}
+          isRegistered={myEventIds.includes(qrScannedEvent.id)}
+          onConfirmRegister={handleRegisterEvent}
+          onOpenCalendar={handleExportCalendar}
+          onClose={clearQrUrlParam}
+          busy={busyEventId === qrScannedEvent.id}
         />
       )}
 
@@ -2729,13 +3570,26 @@ export default function EventHub() {
         <Modal title={viewingEvent.title} onClose={() => setViewingEvent(null)}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
             <CategoryChip category={viewingEvent.category} />
-            <Button
-              variant="secondary"
-              onClick={() => handleExportCalendar(viewingEvent)}
-              style={{ padding: "5px 10px", fontSize: 12 }}
-            >
-              <CalendarPlus size={13} /> Add to Google Calendar
-            </Button>
+            <div style={{ display: "flex", gap: 6 }}>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  const ev = viewingEvent;
+                  setViewingEvent(null);
+                  setOrganizerQrEvent(ev);
+                }}
+                style={{ padding: "5px 10px", fontSize: 12 }}
+              >
+                <QrCode size={13} /> Registration QR
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => handleExportCalendar(viewingEvent)}
+                style={{ padding: "5px 10px", fontSize: 12 }}
+              >
+                <CalendarPlus size={13} /> Add to Google Calendar
+              </Button>
+            </div>
           </div>
           <p style={{ color: COLORS.muted, fontSize: 13.5, lineHeight: 1.6 }}>{viewingEvent.description}</p>
           <div
@@ -2766,22 +3620,6 @@ export default function EventHub() {
             </div>
           </div>
 
-          {myEventIds.includes(viewingEvent.id) && (
-            <div style={{ marginTop: 14 }}>
-              <Button
-                variant="primary"
-                style={{ width: "100%" }}
-                onClick={() => {
-                  const ev = viewingEvent;
-                  setViewingEvent(null);
-                  setQrTicketEvent(ev);
-                }}
-              >
-                <QrCode size={15} /> View My QR Digital Ticket
-              </Button>
-            </div>
-          )}
-
           {role !== "participant" && (
             <div style={{ marginTop: 18 }}>
               <h3 style={{ fontSize: 14, fontWeight: 600, margin: "0 0 8px", color: COLORS.text }}>
@@ -2800,22 +3638,28 @@ export default function EventHub() {
                     <thead>
                       <tr style={{ textAlign: "left", color: COLORS.muted, borderBottom: `1px solid ${COLORS.border}` }}>
                         <th style={{ padding: "7px 10px" }}>Participant</th>
+                        <th style={{ padding: "7px 10px" }}>Dept / Batch</th>
                         <th style={{ padding: "7px 10px" }}>Email</th>
-                        <th style={{ padding: "7px 10px" }}>Ticket ID</th>
                         <th style={{ padding: "7px 10px" }}>Date</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {viewingEvent.participants.map((p, idx) => (
-                        <tr key={p.id || idx} style={{ borderBottom: `1px solid ${COLORS.border}` }}>
-                          <td style={{ padding: "7px 10px", fontWeight: 500 }}>{p.username}</td>
-                          <td style={{ padding: "7px 10px", color: COLORS.muted }}>{p.email}</td>
-                          <td style={{ padding: "7px 10px", fontFamily: "monospace", fontSize: 11.5 }}>
-                            {`EH-${String(viewingEvent.id).padStart(3, "0")}-${String(p.id || idx + 1).padStart(3, "0")}`}
-                          </td>
-                          <td style={{ padding: "7px 10px", color: COLORS.muted }}>{p.registered_at}</td>
-                        </tr>
-                      ))}
+                      {viewingEvent.participants.map((p, idx) => {
+                        const prof = userProfiles[p.username] || {};
+                        return (
+                          <tr key={p.id || idx} style={{ borderBottom: `1px solid ${COLORS.border}` }}>
+                            <td style={{ padding: "7px 10px", fontWeight: 500 }}>
+                              {p.full_name || prof.full_name || p.username}
+                            </td>
+                            <td style={{ padding: "7px 10px", color: COLORS.muted }}>
+                              {p.department || prof.department || "—"}{" "}
+                              {p.batch || prof.batch ? `(${p.batch || prof.batch})` : ""}
+                            </td>
+                            <td style={{ padding: "7px 10px", color: COLORS.muted }}>{p.email}</td>
+                            <td style={{ padding: "7px 10px", color: COLORS.muted }}>{p.registered_at}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -2877,7 +3721,7 @@ export default function EventHub() {
               </Field>
             </div>
             <Button type="submit" variant="primary" style={{ width: "100%", padding: 11, marginTop: 6 }}>
-              Create event
+              Create event & Generate Registration QR
             </Button>
           </form>
         </Modal>
