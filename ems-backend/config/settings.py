@@ -32,6 +32,7 @@ DEBUG = True
 ALLOWED_HOSTS = ["*"]
 
 CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_CREDENTIALS = True
 
 # Application definition
 
@@ -62,9 +63,15 @@ MIDDLEWARE = [
 ]
 
 # Allows the React dev server (localhost:5173) to call this API during development.
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
+# CORS_ALLOWED_ORIGINS = [
+#     "http://localhost:5173",
+#     "http://127.0.0.1:5173",
+# ]
+
+CSRF_TRUSTED_ORIGINS = [
+    "https://event-management-system-tan-six.vercel.app",
+    "https://*.vercel.app",
+    "https://*.onrender.com",
 ]
 
 REST_FRAMEWORK = {
