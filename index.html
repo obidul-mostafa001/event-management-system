@@ -1,18 +1,49 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>EventHub — Campus & Enterprise Events</title>
-    <!-- Tailwind CSS CDN -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <script>
+      // Apply saved/system theme before first paint (no flash)
+      (function () {
+        var s = localStorage.getItem("eh_dark");
+        var dark = s === null ? window.matchMedia("(prefers-color-scheme: dark)").matches : s === "true";
+        document.documentElement.classList.toggle("dark", dark);
+      })();
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
-        darkMode: 'class',
-      }
+        darkMode: "class",
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['"Plus Jakarta Sans"', "system-ui", "sans-serif"],
+              display: ['"Bricolage Grotesque"', '"Plus Jakarta Sans"', "sans-serif"],
+            },
+            colors: {
+              bg: "rgb(var(--bg) / <alpha-value>)",
+              surface: "rgb(var(--surface) / <alpha-value>)",
+              sunken: "rgb(var(--sunken) / <alpha-value>)",
+              line: "rgb(var(--line) / <alpha-value>)",
+              ink: "rgb(var(--ink) / <alpha-value>)",
+              mute: "rgb(var(--mute) / <alpha-value>)",
+              brand: "rgb(var(--brand) / <alpha-value>)",
+            },
+          },
+        },
+      };
     </script>
   </head>
-  <body class="bg-slate-950 text-slate-100 antialiased min-h-screen">
+  <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
