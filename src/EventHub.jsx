@@ -1,649 +1,623 @@
-import React, { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import {
-  Calendar, MapPin, Users, Clock, Plus, Search, Shield,
-  CheckCircle2, LogOut, Moon, Sun, X, QrCode, Check,
-  User, ArrowRight, Sparkles, Lock, Mail, Phone, GraduationCap, Building2
+  Calendar, MapPin, Users, Clock, Plus, Search, Shield, CheckCircle2, LogOut,
+  Moon, Sun, X, QrCode, Check, User, ArrowRight, Sparkles, Lock, Mail, Phone,
+  GraduationCap, Building2,
 } from "lucide-react";
 
-const API_BASE =
-  (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_API_URL) ||
-  "http://127.0.0.1:8000";
+const API_BASE = import.meta.env?.VITE_API_URL || "http://127.0.0.1:8000";
+const CATS = ["All", "Workshop", "Competition", "Cultural", "Career"];
+const TONE = {
+  Workshop: "from-sky-500 to-indigo-600",
+  Competition: "from-orange-500 to-rose-600",
+  Cultural: "from-fuchsia-500 to-purple-600",
+  Career: "from-emerald-500 to-teal-600",
+};
+const MON = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+const BLANK_EVENT = {
+  title: "", description: "", category: "Workshop", date: "", time: "10:00",
+  venue: "", capacity: 100, registration_deadline: "",
+};
 
+const cx = (...a) => a.filter(Boolean).join(" ");
+const list = (d) => (Array.isArray(d) ? d : d?.results || []);
+const dparts = (s) => { const [, m, d] = (s || "").split("-"); return { m: MON[+m - 1] || "—", d: d || "—" }; };
+const left = (e) => (e.capacity || 100) - (e.registered_count || 0);
+const errText = (d, fb) => {
+  if (!d) return fb;
+  if (d.detail) return d.detail;
+  const v = Object.values(d)[0];
+  return Array.isArray(v) ? v[0] : typeof v === "string" ? v : fb;
+};
+
+async function api(path, { method = "GET", body, token } = {}) {
+  const res = await fetch(`${API_BASE}/api${path}`, {
+    method,
+    headers: { "Content-Type": "application/json", ...(token && { Authorization: `Bearer ${token}` }) },
+    body: body && JSON.stringify(body),
+  });
+  let data = null;
+  try { data = await res.json(); } catch { /* empty body */ }
+  return { ok: res.ok, data };
+}
+
+/* ---------- UI primitives ---------- */
+const Btn = ({ v = "primary", className, ...p }) => {
+  const s = {
+    primary: "bg-brand text-white shadow-sm shadow-brand/25 hover:brightness-110",
+    soft: "bg-brand/10 text-brand hover:bg-brand/15",
+    ghost: "border border-line bg-surface hover:bg-sunken",
+    danger: "border border-rose-500/30 text-rose-500 hover:bg-rose-500/10",
+    dark: "bg-ink text-bg hover:opacity-90",
+  }[v];
+  return (
+    <button
+      {...p}
+      className={cx(
+        "inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition active:scale-[.98] disabled:pointer-events-none disabled:opacity-50",
+        s, className
+      )}
+    />
+  );
+};
+
+const inputCls =
+  "w-full rounded-xl border border-line bg-sunken px-3.5 py-2.5 text-sm outline-none transition placeholder:text-mute/60 focus:border-brand focus:ring-4 focus:ring-brand/15";
+const Field = ({ label, className, options, ...p }) => (
+  <label className={cx("block", className)}>
+    <span className="mb-1.5 block text-xs font-medium text-mute">{label}</span>
+    {options ? <select {...p} className={inputCls}>{options}</select>
+      : p.rows ? <textarea {...p} className={inputCls} />
+      : <input {...p} className={inputCls} />}
+  </label>
+);
+
+const Seg = ({ value, onChange, items }) => (
+  <div className="inline-flex rounded-xl bg-sunken p-1">
+    {items.map(([id, label]) => (
+      <button
+        key={id} type="button" onClick={() => onChange(id)}
+        className={cx("rounded-lg px-4 py-1.5 text-sm font-semibold transition",
+          value === id ? "bg-surface text-ink shadow-sm" : "text-mute hover:text-ink")}
+      >{label}</button>
+    ))}
+  </div>
+);
+
+function Modal({ onClose, side, panel, children }) {
+  useEffect(() => {
+    const k = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, [onClose]);
+  return (
+    <div
+      onClick={onClose}
+      className={cx("anim-fade fixed inset-0 z-50 flex bg-black/55 backdrop-blur-sm", side ? "justify-end" : "items-center justify-center p-4")}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className={side
+          ? "anim-slide h-full w-full max-w-md overflow-y-auto bg-surface shadow-2xl"
+          : cx("anim-pop max-h-[92vh] w-full max-w-md overflow-y-auto rounded-3xl bg-surface shadow-2xl", panel)}
+      >{children}</div>
+    </div>
+  );
+}
+
+const CloseBtn = ({ onClick }) => (
+  <button onClick={onClick} aria-label="Close" className="rounded-full p-2 text-mute transition hover:bg-sunken hover:text-ink">
+    <X className="h-4 w-4" />
+  </button>
+);
+
+const Logo = () => (
+  <div className="flex items-center gap-2.5">
+    <div className="grid h-9 w-9 place-items-center rounded-xl bg-brand text-white shadow-lg shadow-brand/30">
+      <Calendar className="h-5 w-5" />
+    </div>
+    <span className="font-display text-xl font-extrabold tracking-tight">EventHub</span>
+  </div>
+);
+
+const Avatar = ({ u, size = "h-8 w-8 text-sm" }) => (
+  <div className={cx("grid shrink-0 place-items-center rounded-full bg-brand font-bold uppercase text-white", size)}>
+    {(u?.full_name || u?.username || "U")[0]}
+  </div>
+);
+
+const Meta = ({ icon: I, children }) => (
+  <div className="flex items-center gap-2.5 text-sm text-mute">
+    <I className="h-4 w-4 shrink-0 text-brand" /><span className="truncate">{children}</span>
+  </div>
+);
+
+const Banner = ({ e, className }) => {
+  const d = dparts(e.date);
+  return (
+    <div className={cx("dots bg-gradient-to-br p-4", TONE[e.category] || TONE.Workshop, className)}>
+      <div className="flex items-start justify-between">
+        <span className="rounded-full bg-black/25 px-2.5 py-1 text-[11px] font-semibold text-white backdrop-blur">{e.category}</span>
+        <div className="rounded-xl bg-white px-2.5 py-1.5 text-center text-stone-900 shadow-md">
+          <div className="text-[9px] font-bold tracking-widest text-stone-500">{d.m}</div>
+          <div className="font-display text-lg font-extrabold leading-none">{d.d}</div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const Seats = ({ e }) => {
+  const cap = e.capacity || 100, n = e.registered_count || 0;
+  const pct = Math.min(100, Math.round((n / cap) * 100));
+  return (
+    <div>
+      <div className="mb-1.5 flex justify-between text-xs">
+        <span className={cx("font-medium", left(e) <= 0 ? "text-rose-500" : "text-mute")}>
+          {left(e) > 0 ? `${left(e)} seats left` : "Sold out"}
+        </span>
+        <span className="font-semibold">{n}/{cap}</span>
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-sunken">
+        <div className={cx("h-full rounded-full transition-all duration-500", pct >= 90 ? "bg-rose-500" : "bg-brand")} style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+};
+
+const Stat = ({ icon: I, value, label }) => (
+  <div className="rounded-2xl border border-line bg-surface p-4">
+    <I className="h-4 w-4 text-brand" />
+    <div className="font-display mt-3 text-2xl font-extrabold">{value}</div>
+    <div className="text-xs text-mute">{label}</div>
+  </div>
+);
+
+const Empty = ({ icon: I, title, text, children }) => (
+  <div className="rounded-3xl border border-dashed border-line px-6 py-16 text-center">
+    <div className="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-2xl bg-brand/10 text-brand"><I className="h-6 w-6" /></div>
+    <p className="font-display text-lg font-bold">{title}</p>
+    <p className="mx-auto mt-1 max-w-sm text-sm text-mute">{text}</p>
+    <div className="mt-5">{children}</div>
+  </div>
+);
+
+/* ---------- App ---------- */
 export default function EventHub() {
-  const [currentUser, setCurrentUser] = useState(null);
+  const [user, setUser] = useState(() => { try { return JSON.parse(localStorage.getItem("eh_user")); } catch { return null; } });
+  const [dark, setDark] = useState(() => document.documentElement.classList.contains("dark"));
+  const [tab, setTab] = useState("home");
   const [authMode, setAuthMode] = useState("signin");
-  const [isDarkMode, setIsDarkMode] = useState(true);
-  const [activeTab, setActiveTab] = useState("home"); // 'home' | 'registrations' | 'venues' | 'users' | 'profile'
   const [events, setEvents] = useState([]);
   const [venues, setVenues] = useState([]);
   const [users, setUsers] = useState([]);
-  const [registrations, setRegistrations] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [statusMsg, setStatusMsg] = useState({ type: "", text: "" });
-  const [searchTerm, setSearchTerm] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("All");
-
-  // Modals
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showQRModal, setShowQRModal] = useState(null);
-  const [showTicketModal, setShowTicketModal] = useState(null);
-
-  // Form states
-  const [loginForm, setLoginForm] = useState({ username: "", password: "" });
-  const [registerForm, setRegisterForm] = useState({
-    username: "",
-    password: "",
-    email: "",
-    full_name: "",
-    phone: "",
-    batch: "",
-    department: "CSE",
-    role: "participant",
-    apply_organizer: false,
+  const [regs, setRegs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [toast, setToast] = useState(null);
+  const [q, setQ] = useState("");
+  const [cat, setCat] = useState("All");
+  const [detail, setDetail] = useState(null);
+  const [qr, setQr] = useState(null);
+  const [pass, setPass] = useState(null);
+  const [creating, setCreating] = useState(false);
+  const [login, setLogin] = useState({ username: "", password: "" });
+  const [reg, setReg] = useState({
+    username: "", password: "", email: "", full_name: "", phone: "",
+    batch: "", department: "CSE", apply_organizer: false,
   });
+  const [draft, setDraft] = useState(BLANK_EVENT);
 
-  const [newEvent, setNewEvent] = useState({
-    title: "",
-    description: "",
-    category: "Workshop",
-    date: "",
-    time: "10:00",
-    venue: "",
-    capacity: 100,
-    registration_deadline: "",
-  });
+  const token = user?.token;
+  const isAdmin = user?.role === "admin";
+  const isStaff = isAdmin || user?.role === "organizer";
+  const notify = (type, text) => setToast({ type, text, k: Date.now() });
 
   useEffect(() => {
-    const savedUser = localStorage.getItem("eh_user");
-    if (savedUser) {
-      try {
-        setCurrentUser(JSON.parse(savedUser));
-      } catch (e) {
-        localStorage.removeItem("eh_user");
-      }
-    }
-    const savedDark = localStorage.getItem("eh_dark");
-    setIsDarkMode(savedDark === null ? true : savedDark === "true");
-  }, []);
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   useEffect(() => {
-    if (isDarkMode) {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
-    localStorage.setItem("eh_dark", isDarkMode);
-  }, [isDarkMode]);
+    document.documentElement.classList.toggle("dark", dark);
+    localStorage.setItem("eh_dark", dark);
+  }, [dark]);
 
-  const token = currentUser?.token || localStorage.getItem("eh_token");
-
-  const authHeaders = useMemo(() => {
-    return token
-      ? { "Content-Type": "application/json", Authorization: `Bearer ${token}` }
-      : { "Content-Type": "application/json" };
-  }, [token]);
-
-  const fetchData = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [evRes, vnRes] = await Promise.all([
-        fetch(`${API_BASE}/api/events/`, { headers: authHeaders }),
-        fetch(`${API_BASE}/api/venues/`, { headers: authHeaders }),
-      ]);
-      if (evRes.ok) {
-        const evData = await evRes.json();
-        setEvents(Array.isArray(evData) ? evData : evData.results || []);
-      }
-      if (vnRes.ok) {
-        const vnData = await vnRes.json();
-        setVenues(Array.isArray(vnData) ? vnData : vnData.results || []);
-      }
-
-      if (currentUser?.role === "admin" || currentUser?.role === "organizer") {
-        const [usrRes, regRes] = await Promise.all([
-          fetch(`${API_BASE}/api/auth/users/`, { headers: authHeaders }),
-          fetch(`${API_BASE}/api/registrations/`, { headers: authHeaders }),
+      const [ev, vn] = await Promise.all([api("/events/", { token }), api("/venues/", { token })]);
+      if (ev.ok) setEvents(list(ev.data));
+      if (vn.ok) setVenues(list(vn.data));
+      if (user) {
+        const [rg, us] = await Promise.all([
+          api("/registrations/", { token }),
+          isAdmin ? api("/auth/users/", { token }) : null,
         ]);
-        if (usrRes.ok) {
-          const uData = await usrRes.json();
-          setUsers(Array.isArray(uData) ? uData : uData.results || []);
-        }
-        if (regRes.ok) {
-          const rData = await regRes.json();
-          setRegistrations(Array.isArray(rData) ? rData : rData.results || []);
-        }
-      } else if (currentUser) {
-        const regRes = await fetch(`${API_BASE}/api/registrations/`, { headers: authHeaders });
-        if (regRes.ok) {
-          const rData = await regRes.json();
-          setRegistrations(Array.isArray(rData) ? rData : rData.results || []);
-        }
-      } else {
-        setRegistrations([]);
-      }
-    } catch (err) {
-      console.warn("API offline or loading cached data");
+        if (rg.ok) setRegs(list(rg.data));
+        if (us?.ok) setUsers(list(us.data));
+      } else setRegs([]);
+    } catch {
+      /* API offline */
     } finally {
       setLoading(false);
     }
+  }, [token, user, isAdmin]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const finishAuth = (data, msg) => {
+    const u = { ...data.user, token: data.access };
+    setUser(u);
+    localStorage.setItem("eh_user", JSON.stringify(u));
+    localStorage.setItem("eh_token", data.access);
+    notify("success", msg);
+    setTab("home");
   };
 
-  useEffect(() => {
-    fetchData();
-  }, [currentUser]);
-
-  const handleLogin = async (e) => {
+  const onLogin = async (e) => {
     e.preventDefault();
-    setLoading(true);
-    setStatusMsg({ type: "", text: "" });
+    setBusy(true);
     try {
-      const res = await fetch(`${API_BASE}/api/auth/login/`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(loginForm),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        const userObj = { ...data.user, token: data.access };
-        setCurrentUser(userObj);
-        localStorage.setItem("eh_user", JSON.stringify(userObj));
-        localStorage.setItem("eh_token", data.access);
-        setStatusMsg({ type: "success", text: `Welcome back, ${userObj.full_name || userObj.username}!` });
-        setActiveTab("home");
-      } else {
-        setStatusMsg({ type: "error", text: data.detail || "Invalid login credentials." });
-      }
-    } catch (err) {
-      setStatusMsg({ type: "error", text: "Backend server unreachable. Make sure backend is running." });
-    } finally {
-      setLoading(false);
-    }
+      const { ok, data } = await api("/auth/login/", { method: "POST", body: login });
+      ok ? finishAuth(data, `Welcome back, ${data.user?.full_name || data.user?.username}!`)
+        : notify("error", errText(data, "Invalid login credentials."));
+    } catch { notify("error", "Backend unreachable. Make sure the server is running."); }
+    finally { setBusy(false); }
   };
 
-  const handleRegister = async (e) => {
+  const onRegister = async (e) => {
     e.preventDefault();
-    setLoading(true);
-    setStatusMsg({ type: "", text: "" });
+    setBusy(true);
     try {
-      const payload = {
-        ...registerForm,
-        role: "participant",
-        requested_role: registerForm.apply_organizer ? "organizer" : null,
-      };
-      const res = await fetch(`${API_BASE}/api/auth/register/`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        const userObj = { ...data.user, token: data.access };
-        setCurrentUser(userObj);
-        localStorage.setItem("eh_user", JSON.stringify(userObj));
-        localStorage.setItem("eh_token", data.access);
-        setStatusMsg({ type: "success", text: "Account created! You can now register for events." });
-        setActiveTab("home");
-      } else {
-        const firstErr = Object.values(data)[0];
-        setStatusMsg({
-          type: "error",
-          text: Array.isArray(firstErr) ? firstErr[0] : String(firstErr || "Registration failed."),
-        });
-      }
-    } catch (err) {
-      setStatusMsg({ type: "error", text: "Server connection error during sign up." });
-    } finally {
-      setLoading(false);
-    }
+      const body = { ...reg, role: "participant", requested_role: reg.apply_organizer ? "organizer" : null };
+      const { ok, data } = await api("/auth/register/", { method: "POST", body });
+      ok ? finishAuth(data, "Account created! You can now register for events.")
+        : notify("error", errText(data, "Registration failed."));
+    } catch { notify("error", "Server connection error during sign up."); }
+    finally { setBusy(false); }
   };
 
-  const handleLogout = () => {
-    setCurrentUser(null);
+  const logout = () => {
+    setUser(null); setRegs([]); setUsers([]); setTab("home");
     localStorage.removeItem("eh_user");
     localStorage.removeItem("eh_token");
-    setRegistrations([]);
-    setActiveTab("home");
-    setStatusMsg({ type: "", text: "" });
   };
 
-  // Guardrail: Unauthenticated users cannot register for any event
-  const handleRegisterEvent = async (eventId) => {
-    if (!currentUser) {
-      setStatusMsg({
-        type: "warning",
-        text: "Authentication required: Please sign in or create an account before registering for an event.",
-      });
-      setAuthMode("signin");
-      setActiveTab("profile");
-      window.scrollTo({ top: 0, behavior: "smooth" });
+  const eventAction = async (id, kind) => {
+    if (!user) {
+      notify("warning", "Please sign in or create an account first.");
+      setAuthMode("signin"); setTab("profile"); setDetail(null);
       return;
     }
-
     try {
-      const res = await fetch(`${API_BASE}/api/events/${eventId}/register/`, {
-        method: "POST",
-        headers: authHeaders,
-      });
-      if (res.ok) {
-        fetchData();
-      }
-    } catch (e) {
-      console.error(e);
-    }
+      const { ok, data } = await api(`/events/${id}/${kind}/`, { method: "POST", token });
+      if (ok) {
+        notify("success", kind === "register" ? "You're in! Your pass is ready." : "Registration cancelled.");
+        load();
+      } else notify("error", errText(data, "Something went wrong."));
+    } catch { notify("error", "Server unreachable."); }
   };
 
-  const handleCancelRegistration = async (eventId) => {
-    if (!currentUser) return;
-    try {
-      const res = await fetch(`${API_BASE}/api/events/${eventId}/cancel/`, {
-        method: "POST",
-        headers: authHeaders,
-      });
-      if (res.ok) {
-        fetchData();
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const handleCreateEvent = async (e) => {
+  const createEvent = async (e) => {
     e.preventDefault();
-    if (!currentUser) return;
-    setLoading(true);
+    setBusy(true);
     try {
-      const res = await fetch(`${API_BASE}/api/events/`, {
-        method: "POST",
-        headers: authHeaders,
-        body: JSON.stringify(newEvent),
-      });
-      if (res.ok) {
-        setShowCreateModal(false);
-        setNewEvent({
-          title: "",
-          description: "",
-          category: "Workshop",
-          date: "",
-          time: "10:00",
-          venue: "",
-          capacity: 100,
-          registration_deadline: "",
-        });
-        fetchData();
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
+      const { ok, data } = await api("/events/", { method: "POST", token, body: draft });
+      if (ok) { setCreating(false); setDraft(BLANK_EVENT); notify("success", "Event published."); load(); }
+      else notify("error", errText(data, "Could not publish event."));
+    } catch { notify("error", "Server unreachable."); }
+    finally { setBusy(false); }
   };
 
-  const handleApproveOrganizer = async (userId) => {
-    try {
-      const res = await fetch(`${API_BASE}/api/auth/users/${userId}/`, {
-        method: "PATCH",
-        headers: authHeaders,
-        body: JSON.stringify({ role: "organizer", requested_role: null }),
-      });
-      if (res.ok) fetchData();
-    } catch (e) {
-      console.error(e);
-    }
+  const approve = async (id) => {
+    const { ok } = await api(`/auth/users/${id}/`, { method: "PATCH", token, body: { role: "organizer", requested_role: null } });
+    if (ok) { notify("success", "Organizer approved."); load(); }
   };
 
-  const openGoogleCalendar = (ev) => {
-    const title = encodeURIComponent(ev.title);
-    const details = encodeURIComponent(ev.description || "");
-    const location = encodeURIComponent(ev.venue_details?.name || "Campus Venue");
-    const dStr = (ev.date || "").replace(/-/g, "");
-    const tStr = (ev.time || "10:00").replace(/:/g, "") + "00";
-    const dates = `${dStr}T${tStr}/${dStr}T${tStr}`;
-    const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&details=${details}&location=${location}&dates=${dates}`;
-    window.open(url, "_blank");
+  const gcal = (e) => {
+    const d = (e.date || "").replace(/-/g, "");
+    const t = (e.time || "10:00").replace(/:/g, "").slice(0, 4) + "00";
+    const p = new URLSearchParams({
+      action: "TEMPLATE", text: e.title || "", details: e.description || "",
+      location: e.venue_details?.name || "Campus Venue", dates: `${d}T${t}/${d}T${t}`,
+    });
+    window.open(`https://calendar.google.com/calendar/render?${p}`, "_blank");
   };
 
-  const filteredEvents = Array.isArray(events)
-    ? events.filter((ev) => {
-        const matchCat = selectedCategory === "All" || ev.category === selectedCategory;
-        const matchSearch =
-          (ev.title || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-          (ev.description || "").toLowerCase().includes(searchTerm.toLowerCase());
-        return matchCat && matchSearch;
-      })
-    : [];
+  const filtered = useMemo(
+    () => events.filter((e) =>
+      (cat === "All" || e.category === cat) &&
+      `${e.title} ${e.description}`.toLowerCase().includes(q.toLowerCase())),
+    [events, cat, q]
+  );
+  const mine = regs.filter((r) => r.status === "registered");
+  const isReg = (id) => !!user && mine.some((r) => (r.event?.id ?? r.event) === id);
+  const first = (user?.full_name || user?.username || "").split(" ")[0];
+  const pending = users.filter((u) => u.requested_role === "organizer" && u.role !== "organizer").length;
 
-  const isRegistered = (eventId) => {
-    if (!currentUser) return false;
-    return registrations.some(
-      (r) =>
-        (r.event === eventId || r.event?.id === eventId) &&
-        r.status === "registered"
-    );
-  };
-
-  const navItems = [
-    { id: "home", label: "Explore Events", icon: Sparkles },
-    ...(currentUser ? [{ id: "registrations", label: "My Passes", icon: CheckCircle2 }] : []),
-    ...(currentUser?.role === "admin" || currentUser?.role === "organizer"
-      ? [{ id: "venues", label: "Venues", icon: MapPin }]
-      : []),
-    ...(currentUser?.role === "admin"
-      ? [{ id: "users", label: "Admin Panel", icon: Shield }]
-      : []),
-    { id: "profile", label: currentUser ? "Profile" : "Sign In / Join", icon: User },
+  const nav = [
+    { id: "home", label: "Explore", icon: Sparkles },
+    ...(user ? [{ id: "registrations", label: "My Passes", icon: CheckCircle2, badge: mine.length }] : []),
+    ...(isStaff ? [{ id: "venues", label: "Venues", icon: MapPin }] : []),
+    ...(isAdmin ? [{ id: "users", label: "Admin", icon: Shield, badge: pending }] : []),
+    { id: "profile", label: user ? "Account" : "Sign in", icon: User },
   ];
 
+  const actions = (e, full) =>
+    isReg(e.id) ? (
+      <>
+        <Btn className={full && "flex-1"} onClick={() => setPass(e)}><QrCode className="h-4 w-4" />View pass</Btn>
+        <Btn v="danger" onClick={() => eventAction(e.id, "cancel")}>Cancel</Btn>
+      </>
+    ) : (
+      <Btn className={full && "flex-1"} disabled={left(e) <= 0} onClick={() => eventAction(e.id, "register")}>
+        {!user && <Lock className="h-4 w-4" />}
+        {left(e) <= 0 ? "Sold out" : user ? "Register" : "Sign in to register"}
+      </Btn>
+    );
+
   return (
-    <div className={`min-h-screen transition-colors duration-300 ${isDarkMode ? "dark bg-slate-950 text-slate-100" : "bg-slate-50 text-slate-900"}`}>
-      {/* Ambient Background Glow */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
-        <div className="absolute -top-40 -right-40 w-96 h-96 rounded-full bg-indigo-600/10 dark:bg-indigo-500/15 blur-3xl" />
-        <div className="absolute top-1/3 -left-40 w-96 h-96 rounded-full bg-violet-600/10 dark:bg-violet-500/10 blur-3xl" />
+    <div className="min-h-screen">
+      {/* Toast */}
+      <div className="pointer-events-none fixed inset-x-0 top-4 z-[60] flex justify-center px-4">
+        {toast && (
+          <div
+            key={toast.k}
+            className={cx(
+              "anim-pop pointer-events-auto flex items-center gap-2 rounded-full border bg-surface px-4 py-2.5 text-sm font-medium shadow-xl",
+              toast.type === "error" ? "border-rose-500/40 text-rose-500"
+                : toast.type === "warning" ? "border-amber-500/40 text-amber-600 dark:text-amber-400"
+                : "border-emerald-500/40 text-emerald-600 dark:text-emerald-400"
+            )}
+          >
+            {toast.type === "success" && <Check className="h-4 w-4" />}
+            {toast.text}
+            <button onClick={() => setToast(null)} aria-label="Dismiss"><X className="h-3.5 w-3.5 opacity-60" /></button>
+          </div>
+        )}
       </div>
 
-      {/* Modern Glassmorphic Top Navbar */}
-      <header className="sticky top-0 z-30 backdrop-blur-xl bg-white/80 dark:bg-slate-950/80 border-b border-slate-200/80 dark:border-slate-800/80">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-          {/* Brand */}
-          <button
-            onClick={() => setActiveTab("home")}
-            className="flex items-center gap-3 text-left group"
-          >
-            <div className="p-2 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-600/25 group-hover:scale-105 transition">
-              <Calendar className="w-5 h-5" />
-            </div>
-            <div>
-              <span className="font-black text-lg tracking-tight bg-gradient-to-r from-indigo-600 to-violet-500 dark:from-white dark:to-indigo-200 bg-clip-text text-transparent">
-                EventHub
-              </span>
-              <span className="hidden sm:block text-[10px] font-medium text-slate-400 -mt-1">
-                Campus & Enterprise Portal
-              </span>
-            </div>
-          </button>
+      {/* Header */}
+      <header className="sticky top-0 z-30 border-b border-line bg-bg/80 backdrop-blur-xl">
+        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
+          <button onClick={() => setTab("home")} aria-label="Home"><Logo /></button>
 
-          {/* Desktop Navigation Pills */}
-          <nav className="hidden md:flex items-center gap-1.5 bg-slate-100/80 dark:bg-slate-900/90 p-1 rounded-2xl border border-slate-200/60 dark:border-slate-800">
-            {navItems.map((tab) => {
-              const Icon = tab.icon;
-              const isActive = activeTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center gap-2 px-4 py-1.5 rounded-xl text-xs font-semibold transition-all ${
-                    isActive
-                      ? "bg-white dark:bg-indigo-600 text-indigo-600 dark:text-white shadow-sm"
-                      : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-                  }`}
-                >
-                  <Icon className="w-3.5 h-3.5" />
-                  <span>{tab.label}</span>
-                </button>
-              );
-            })}
+          <nav className="hidden items-center gap-1 md:flex">
+            {nav.map((t) => (
+              <button
+                key={t.id} onClick={() => setTab(t.id)}
+                className={cx("relative flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold transition",
+                  tab === t.id ? "bg-brand/10 text-brand" : "text-mute hover:bg-sunken hover:text-ink")}
+              >
+                <t.icon className="h-4 w-4" />{t.label}
+                {!!t.badge && <span className="rounded-full bg-brand px-1.5 text-[10px] font-bold text-white">{t.badge}</span>}
+              </button>
+            ))}
           </nav>
 
-          {/* Right Action Controls */}
-          <div className="flex items-center gap-2.5">
-            {(currentUser?.role === "admin" || currentUser?.role === "organizer") && (
-              <button
-                onClick={() => setShowCreateModal(true)}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-xs font-semibold shadow-md shadow-indigo-600/20 transition"
-              >
-                <Plus className="w-4 h-4" />
-                <span className="hidden sm:inline">Host Event</span>
-              </button>
+          <div className="flex items-center gap-2">
+            {isStaff && (
+              <Btn onClick={() => setCreating(true)}>
+                <Plus className="h-4 w-4" /><span className="hidden sm:inline">Host event</span>
+              </Btn>
             )}
-
             <button
-              onClick={() => setIsDarkMode(!isDarkMode)}
-              className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:border-indigo-500/50 transition"
-              title="Toggle Theme"
-            >
-              {isDarkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
-            </button>
-
-            {currentUser ? (
-              <button
-                onClick={() => setActiveTab("profile")}
-                className="flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-indigo-500/50 transition"
-              >
-                <div className="w-6 h-6 rounded-lg bg-indigo-600 text-white font-bold text-xs flex items-center justify-center uppercase">
-                  {(currentUser.full_name || currentUser.username || "U")[0]}
-                </div>
-                <span className="hidden sm:inline text-xs font-semibold max-w-[90px] truncate">
-                  {currentUser.username}
-                </span>
-              </button>
+              onClick={() => setDark(!dark)} aria-label="Toggle theme"
+              className="rounded-xl border border-line bg-surface p-2.5 text-mute transition hover:text-ink"
+            >{dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}</button>
+            {user ? (
+              <button onClick={() => setTab("profile")} aria-label="Account"><Avatar u={user} size="h-10 w-10 text-sm" /></button>
             ) : (
-              <button
-                onClick={() => {
-                  setAuthMode("signin");
-                  setActiveTab("profile");
-                }}
-                className="px-4 py-2 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-950 text-xs font-bold hover:opacity-90 transition"
-              >
-                Sign In
-              </button>
+              <Btn v="dark" onClick={() => { setAuthMode("signin"); setTab("profile"); }}>Sign in</Btn>
             )}
           </div>
         </div>
       </header>
 
-      {/* Main Container */}
-      <main className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 pt-6 pb-24 md:pb-12">
-        {/* ================= HOME TAB (LANDING + EVENTS) ================= */}
-        {activeTab === "home" && (
+      <main className="mx-auto max-w-7xl px-4 pb-28 pt-6 sm:px-6 md:pb-14">
+        {/* ===== EXPLORE ===== */}
+        {tab === "home" && (
           <div className="space-y-8">
-            {/* Hero Banner Section */}
-            <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-600 via-indigo-700 to-violet-900 p-8 sm:p-12 text-white shadow-2xl shadow-indigo-900/20">
-              <div className="absolute right-0 top-0 w-80 h-80 bg-white/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3" />
-              <div className="relative z-10 max-w-3xl space-y-5">
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/15 backdrop-blur-md border border-white/20 text-xs font-medium text-indigo-100">
-                  <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                  <span>Next-Gen Campus & Organization Event Platform</span>
+            <section className="mesh relative overflow-hidden rounded-[2rem] border border-line bg-surface px-6 py-10 sm:px-12 sm:py-14">
+              <p className="text-sm font-semibold text-brand">{user ? `Welcome back, ${first}` : "Campus & enterprise events"}</p>
+              <h1 className="font-display mt-3 max-w-2xl text-4xl font-extrabold leading-[1.05] tracking-tight sm:text-6xl">
+                Find your next <span className="text-brand">great event.</span>
+              </h1>
+              <p className="mt-4 max-w-xl text-base text-mute">
+                Workshops, hackathons, cultural fests and career fairs. Register in one tap, get a QR pass, sync to your calendar.
+              </p>
+              <div className="mt-8 flex max-w-2xl flex-col gap-3 sm:flex-row">
+                <div className="relative flex-1">
+                  <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-mute" />
+                  <input
+                    value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search events…"
+                    className={cx(inputCls, "!rounded-2xl !bg-surface py-3.5 pl-11 shadow-sm")}
+                  />
                 </div>
-
-                <h1 className="text-3xl sm:text-5xl font-black tracking-tight leading-tight">
-                  Discover, Host & Experience Unforgettable Events.
-                </h1>
-
-                <p className="text-indigo-100/90 text-sm sm:text-base leading-relaxed max-w-2xl">
-                  EventHub is a unified event management platform designed for universities, tech communities, and organizations. Explore upcoming workshops, hackathons, and cultural fests, claim instant scannable QR tickets, and sync schedules directly to your Google Calendar.
-                </p>
-
-                <div className="pt-2 flex flex-wrap items-center gap-3">
-                  {!currentUser ? (
-                    <>
-                      <button
-                        onClick={() => {
-                          setAuthMode("signup");
-                          setActiveTab("profile");
-                        }}
-                        className="px-6 py-3 rounded-2xl bg-white text-indigo-700 font-bold text-xs sm:text-sm hover:bg-indigo-50 transition flex items-center gap-2 shadow-lg"
-                      >
-                        <span>Create Free Account</span>
-                        <ArrowRight className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => {
-                          setAuthMode("signin");
-                          setActiveTab("profile");
-                        }}
-                        className="px-6 py-3 rounded-2xl bg-indigo-500/30 hover:bg-indigo-500/40 border border-white/25 text-white font-semibold text-xs sm:text-sm backdrop-blur-md transition"
-                      >
-                        Member Sign In
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      onClick={() => setActiveTab("registrations")}
-                      className="px-6 py-3 rounded-2xl bg-white text-indigo-700 font-bold text-xs sm:text-sm hover:bg-indigo-50 transition flex items-center gap-2 shadow-lg"
-                    >
-                      <span>View My Event Passes ({registrations.filter((r) => r.status === "registered").length})</span>
-                      <ArrowRight className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-
-                {/* Feature Highlights Strip */}
-                <div className="pt-6 mt-6 border-t border-white/15 grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs text-indigo-100">
-                  <div className="flex items-center gap-2.5">
-                    <Shield className="w-4 h-4 text-emerald-300 shrink-0" />
-                    <span>Verified Student & Organizer Profiles</span>
-                  </div>
-                  <div className="flex items-center gap-2.5">
-                    <QrCode className="w-4 h-4 text-amber-300 shrink-0" />
-                    <span>Instant Digital QR Entry Passes</span>
-                  </div>
-                  <div className="flex items-center gap-2.5">
-                    <Calendar className="w-4 h-4 text-sky-300 shrink-0" />
-                    <span>1-Click Google Calendar Sync</span>
-                  </div>
-                </div>
+                {!user && (
+                  <Btn className="!rounded-2xl px-6" onClick={() => { setAuthMode("signup"); setTab("profile"); }}>
+                    Create account<ArrowRight className="h-4 w-4" />
+                  </Btn>
+                )}
+              </div>
+              <div className="mt-5 flex flex-wrap gap-2">
+                {CATS.map((c) => (
+                  <button
+                    key={c} onClick={() => setCat(c)}
+                    className={cx("rounded-full border px-4 py-1.5 text-sm font-semibold transition",
+                      cat === c ? "border-brand bg-brand text-white" : "border-line bg-surface text-mute hover:text-ink")}
+                  >{c}</button>
+                ))}
               </div>
             </section>
 
-            {/* Search & Category Filter Controls */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white dark:bg-slate-900/90 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm">
-              <div className="relative flex-1 max-w-md">
-                <Search className="w-4 h-4 absolute left-3.5 top-3 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Search events by title or keyword..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-xs focus:outline-none focus:border-indigo-500 transition"
-                />
-              </div>
+            {isStaff && (
+              <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                <Stat icon={Calendar} value={events.length} label="Events" />
+                <Stat icon={CheckCircle2} value={regs.length} label="Registrations" />
+                <Stat icon={MapPin} value={venues.length} label="Venues" />
+                {isAdmin ? <Stat icon={Shield} value={pending} label="Pending approvals" />
+                  : <Stat icon={Users} value={events.reduce((a, e) => a + Math.max(0, left(e)), 0)} label="Open seats" />}
+              </section>
+            )}
 
-              <div className="flex items-center gap-2 overflow-x-auto pb-1 md:pb-0">
-                {["All", "Workshop", "Competition", "Cultural", "Career"].map((cat) => (
-                  <button
-                    key={cat}
-                    onClick={() => setSelectedCategory(cat)}
-                    className={`px-4 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition ${
-                      selectedCategory === cat
-                        ? "bg-indigo-600 text-white shadow-sm shadow-indigo-600/30"
-                        : "bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800"
-                    }`}
+            <div className="flex items-end justify-between">
+              <h2 className="font-display text-2xl font-extrabold">Upcoming events</h2>
+              <span className="text-sm text-mute">{filtered.length} found</span>
+            </div>
+
+            {loading && !events.length ? (
+              <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                {[0, 1, 2].map((i) => <div key={i} className="skeleton h-80 rounded-3xl" />)}
+              </div>
+            ) : !filtered.length ? (
+              <Empty icon={Search} title="No events found" text="Try a different keyword or category, or check back soon.">
+                <Btn v="ghost" onClick={() => { setQ(""); setCat("All"); }}>Clear filters</Btn>
+              </Empty>
+            ) : (
+              <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                {filtered.map((e) => (
+                  <article
+                    key={e.id} onClick={() => setDetail(e)}
+                    className="group flex cursor-pointer flex-col overflow-hidden rounded-3xl border border-line bg-surface transition duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-black/10"
                   >
-                    {cat}
-                  </button>
+                    <Banner e={e} className="h-28" />
+                    <div className="flex flex-1 flex-col gap-4 p-5">
+                      <div>
+                        <h3 className="font-display text-xl font-bold leading-snug transition group-hover:text-brand">{e.title}</h3>
+                        <p className="mt-1.5 line-clamp-2 text-sm text-mute">{e.description}</p>
+                      </div>
+                      <div className="space-y-2">
+                        <Meta icon={Clock}>{e.date} · {e.time}</Meta>
+                        <Meta icon={MapPin}>{e.venue_details?.name || "Main Campus Venue"}</Meta>
+                      </div>
+                      <div className="mt-auto space-y-4">
+                        <Seats e={e} />
+                        <div className="flex gap-2" onClick={(ev) => ev.stopPropagation()}>{actions(e, true)}</div>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ===== AUTH / PROFILE ===== */}
+        {tab === "profile" && (user ? (
+          <div className="mx-auto max-w-3xl overflow-hidden rounded-[2rem] border border-line bg-surface">
+            <div className="dots h-32 bg-gradient-to-br from-indigo-600 to-violet-700" />
+            <div className="px-6 pb-8 sm:px-8">
+              <div className="-mt-12 mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+                <div className="flex items-end gap-4">
+                  <Avatar u={user} size="h-24 w-24 border-4 border-surface text-4xl" />
+                  <div className="pb-1">
+                    <h2 className="font-display text-2xl font-extrabold">{user.full_name || user.username}</h2>
+                    <p className="text-sm text-mute">@{user.username} · <span className="capitalize">{user.role}</span></p>
+                  </div>
+                </div>
+                <Btn v="danger" onClick={logout}><LogOut className="h-4 w-4" />Sign out</Btn>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {[[Mail, "Email", user.email], [Phone, "Phone", user.phone], [Building2, "Department", user.department], [GraduationCap, "Batch", user.batch]].map(([I, l, v]) => (
+                  <div key={l} className="flex items-center gap-3 rounded-2xl border border-line bg-sunken p-4">
+                    <I className="h-5 w-5 text-brand" />
+                    <div><p className="text-xs text-mute">{l}</p><p className="text-sm font-semibold">{v || "Not provided"}</p></div>
+                  </div>
                 ))}
               </div>
             </div>
-
-            {/* Event Cards Grid */}
-            {loading && filteredEvents.length === 0 ? (
-              <div className="text-center py-16 text-sm text-slate-400">Loading upcoming events...</div>
-            ) : filteredEvents.length === 0 ? (
-              <div className="text-center py-16 rounded-3xl border border-dashed border-slate-300 dark:border-slate-800">
-                <p className="text-sm font-semibold text-slate-500">No events match your search criteria.</p>
+          </div>
+        ) : (
+          <div className="mx-auto grid max-w-5xl overflow-hidden rounded-[2rem] border border-line bg-surface lg:grid-cols-5">
+            <aside className="dots hidden flex-col justify-between bg-gradient-to-br from-indigo-600 to-violet-700 p-10 text-white lg:col-span-2 lg:flex">
+              <div className="flex items-center gap-2.5 font-display text-xl font-extrabold"><Calendar className="h-6 w-6" />EventHub</div>
+              <div>
+                <h2 className="font-display text-4xl font-extrabold leading-tight">Your campus, one calendar.</h2>
+                <ul className="mt-6 space-y-3 text-sm text-indigo-100">
+                  <li className="flex gap-3"><Shield className="h-5 w-5 shrink-0" />Verified student & organizer profiles</li>
+                  <li className="flex gap-3"><QrCode className="h-5 w-5 shrink-0" />Instant QR entry passes</li>
+                  <li className="flex gap-3"><Calendar className="h-5 w-5 shrink-0" />One-click Google Calendar sync</li>
+                </ul>
               </div>
+            </aside>
+            <div className="p-6 sm:p-10 lg:col-span-3">
+              <Seg value={authMode} onChange={setAuthMode} items={[["signin", "Sign in"], ["signup", "Sign up"]]} />
+              <h2 className="font-display mt-6 text-3xl font-extrabold">
+                {authMode === "signin" ? "Welcome back" : "Create your account"}
+              </h2>
+              <p className="mb-6 mt-1 text-sm text-mute">
+                {authMode === "signin" ? "Sign in to register for events and access your passes." : "Join to attend events or apply as an organizer."}
+              </p>
+
+              {authMode === "signin" ? (
+                <form onSubmit={onLogin} className="space-y-4">
+                  <Field label="Username" required autoComplete="username" placeholder="Your username" value={login.username} onChange={(e) => setLogin({ ...login, username: e.target.value })} />
+                  <Field label="Password" required type="password" autoComplete="current-password" placeholder="••••••••" value={login.password} onChange={(e) => setLogin({ ...login, password: e.target.value })} />
+                  <Btn type="submit" disabled={busy} className="w-full py-3">{busy ? "Signing in…" : "Sign in"}</Btn>
+                  <div className="flex flex-wrap items-center gap-2 pt-2">
+                    <span className="text-xs text-mute">Quick demo login:</span>
+                    {[["admin", "AdminPass123!"], ["organizer", "OrganizerPass123!"], ["student", "StudentPass123!"]].map(([u, p]) => (
+                      <button key={u} type="button" onClick={() => setLogin({ username: u, password: p })}
+                        className="rounded-full border border-line px-3 py-1 text-xs font-semibold capitalize transition hover:bg-sunken">{u}</button>
+                    ))}
+                  </div>
+                </form>
+              ) : (
+                <form onSubmit={onRegister} className="grid gap-4 sm:grid-cols-2">
+                  <Field label="Full name" required placeholder="e.g. Sayed Obidul" value={reg.full_name} onChange={(e) => setReg({ ...reg, full_name: e.target.value })} />
+                  <Field label="Username" required placeholder="Choose a username" value={reg.username} onChange={(e) => setReg({ ...reg, username: e.target.value })} />
+                  <Field label="Email" required type="email" placeholder="you@university.edu" value={reg.email} onChange={(e) => setReg({ ...reg, email: e.target.value })} />
+                  <Field label="Phone" placeholder="+880 1XXX-XXXXXX" value={reg.phone} onChange={(e) => setReg({ ...reg, phone: e.target.value })} />
+                  <Field label="Department" value={reg.department} onChange={(e) => setReg({ ...reg, department: e.target.value })}
+                    options={["CSE", "FMRT", "FES", "MGT", "THM"].map((d) => <option key={d}>{d}</option>)} />
+                  <Field label="Batch" placeholder="e.g. 2022-26" value={reg.batch} onChange={(e) => setReg({ ...reg, batch: e.target.value })} />
+                  <Field className="sm:col-span-2" label="Password" required type="password" placeholder="Min 6 characters" value={reg.password} onChange={(e) => setReg({ ...reg, password: e.target.value })} />
+                  <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-line bg-sunken p-3.5 text-sm sm:col-span-2">
+                    <input type="checkbox" className="h-4 w-4 accent-[rgb(var(--brand))]" checked={reg.apply_organizer} onChange={(e) => setReg({ ...reg, apply_organizer: e.target.checked })} />
+                    Request organizer privileges (needs admin approval)
+                  </label>
+                  <Btn type="submit" disabled={busy} className="w-full py-3 sm:col-span-2">{busy ? "Creating account…" : "Create account"}</Btn>
+                </form>
+              )}
+            </div>
+          </div>
+        ))}
+
+        {/* ===== MY PASSES ===== */}
+        {tab === "registrations" && user && (
+          <div className="space-y-6">
+            <div>
+              <h2 className="font-display text-3xl font-extrabold">My passes</h2>
+              <p className="text-sm text-mute">{mine.length} active registration{mine.length === 1 ? "" : "s"}</p>
+            </div>
+            {!regs.length ? (
+              <Empty icon={QrCode} title="No passes yet" text="Register for an event and your QR pass will show up here.">
+                <Btn onClick={() => setTab("home")}>Explore events<ArrowRight className="h-4 w-4" /></Btn>
+              </Empty>
             ) : (
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filteredEvents.map((ev) => {
-                  const registered = isRegistered(ev.id);
-                  const filled = ev.registered_count || 0;
-                  const cap = ev.capacity || 100;
-                  const fillPercent = Math.min(100, Math.round((filled / cap) * 100));
-
+              <div className="grid gap-4 md:grid-cols-2">
+                {regs.map((r) => {
+                  const e = r.event_details || {};
+                  const on = r.status === "registered";
                   return (
-                    <div
-                      key={ev.id}
-                      className="group rounded-3xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 flex flex-col justify-between shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300"
-                    >
-                      <div className="space-y-4">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="px-3 py-1 rounded-full bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-[11px] font-bold">
-                            {ev.category}
-                          </span>
-                          <span className="text-[11px] font-medium text-slate-400">
-                            Closes {ev.registration_deadline}
-                          </span>
+                    <div key={r.id} className="flex overflow-hidden rounded-2xl border border-line bg-surface">
+                      <div className={cx("w-2 bg-gradient-to-b", TONE[e.category] || TONE.Workshop)} />
+                      <div className="flex-1 space-y-3 p-5">
+                        <div className="flex items-start justify-between gap-3">
+                          <h3 className="font-display text-lg font-bold">{e.title || "Event registration"}</h3>
+                          <span className={cx("rounded-full px-2.5 py-1 text-[11px] font-bold capitalize",
+                            on ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-sunken text-mute")}>{r.status}</span>
                         </div>
-
-                        <div>
-                          <h3 className="font-bold text-lg text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition">
-                            {ev.title}
-                          </h3>
-                          <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 mt-1.5 leading-relaxed">
-                            {ev.description}
-                          </p>
+                        <Meta icon={Clock}>{e.date} · {e.time}</Meta>
+                        <Meta icon={MapPin}>{e.venue_details?.name || "Campus"}</Meta>
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          <Btn className="!px-3 !py-2" disabled={!on} onClick={() => setPass(e)}><QrCode className="h-4 w-4" />QR pass</Btn>
+                          <Btn v="ghost" className="!px-3 !py-2" onClick={() => gcal(e)}><Calendar className="h-4 w-4" />Calendar</Btn>
+                          {on && <Btn v="danger" className="!px-3 !py-2" onClick={() => eventAction(e.id ?? r.event, "cancel")}>Cancel</Btn>}
                         </div>
-
-                        <div className="space-y-2 text-xs text-slate-600 dark:text-slate-300 pt-3 border-t border-slate-100 dark:border-slate-800/80">
-                          <div className="flex items-center gap-2.5">
-                            <Clock className="w-4 h-4 text-indigo-500 shrink-0" />
-                            <span>{ev.date} · {ev.time}</span>
-                          </div>
-                          <div className="flex items-center gap-2.5">
-                            <MapPin className="w-4 h-4 text-indigo-500 shrink-0" />
-                            <span>{ev.venue_details?.name || "Main Campus Venue"}</span>
-                          </div>
-                        </div>
-
-                        {/* Seat Capacity Bar */}
-                        <div className="space-y-1.5 pt-1">
-                          <div className="flex justify-between text-[11px] font-medium">
-                            <span className="text-slate-500 dark:text-slate-400">Seat Availability</span>
-                            <span className="text-slate-700 dark:text-slate-200 font-semibold">
-                              {filled} / {cap}
-                            </span>
-                          </div>
-                          <div className="w-full h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                            <div
-                              className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-violet-500 transition-all duration-500"
-                              style={{ width: `${fillPercent}%` }}
-                            />
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="pt-5 mt-5 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            onClick={() => openGoogleCalendar(ev)}
-                            className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
-                            title="Add to Google Calendar"
-                          >
-                            <Calendar className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => setShowQRModal(ev)}
-                            className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
-                            title="Share Event QR Poster"
-                          >
-                            <QrCode className="w-4 h-4" />
-                          </button>
-                        </div>
-
-                        {registered ? (
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => setShowTicketModal(ev)}
-                              className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition shadow-sm"
-                            >
-                              View Pass
-                            </button>
-                            <button
-                              onClick={() => handleCancelRegistration(ev.id)}
-                              className="px-3 py-2 rounded-xl border border-rose-200 dark:border-rose-900/50 text-rose-500 text-xs font-semibold hover:bg-rose-50 dark:hover:bg-rose-950/30 transition"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => handleRegisterEvent(ev.id)}
-                            className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-md shadow-indigo-600/20"
-                          >
-                            {!currentUser && <Lock className="w-3.5 h-3.5" />}
-                            <span>{currentUser ? "Register Now" : "Sign In to Register"}</span>
-                          </button>
-                        )}
                       </div>
                     </div>
                   );
@@ -653,629 +627,174 @@ export default function EventHub() {
           </div>
         )}
 
-        {/* ================= PROFILE & AUTH SECTION ================= */}
-        {activeTab === "profile" && (
-          <div className="max-w-3xl mx-auto">
-            {statusMsg.text && (
-              <div
-                className={`p-4 mb-6 rounded-2xl border text-xs font-medium flex items-center justify-between ${
-                  statusMsg.type === "error"
-                    ? "bg-rose-500/10 border-rose-500/30 text-rose-500"
-                    : statusMsg.type === "warning"
-                    ? "bg-amber-500/10 border-amber-500/30 text-amber-500"
-                    : "bg-emerald-500/10 border-emerald-500/30 text-emerald-500"
-                }`}
-              >
-                <span>{statusMsg.text}</span>
-                <button onClick={() => setStatusMsg({ type: "", text: "" })}>
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            )}
-
-            {currentUser ? (
-              /* Logged-In Profile Card */
-              <div className="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xl">
-                <div className="h-32 bg-gradient-to-r from-indigo-600 to-violet-700" />
-                <div className="px-6 sm:px-8 pb-8">
-                  <div className="relative flex flex-col sm:flex-row sm:items-end justify-between -mt-12 mb-6 gap-4">
-                    <div className="flex items-end gap-4">
-                      <div className="w-24 h-24 rounded-3xl bg-slate-900 dark:bg-slate-800 border-4 border-white dark:border-slate-900 text-white font-black text-3xl flex items-center justify-center shadow-lg uppercase">
-                        {(currentUser.full_name || currentUser.username || "U")[0]}
-                      </div>
-                      <div className="pb-1">
-                        <h2 className="text-xl font-black text-slate-900 dark:text-white">
-                          {currentUser.full_name || currentUser.username}
-                        </h2>
-                        <p className="text-xs text-slate-400">@{currentUser.username}</p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <span className="px-3 py-1 rounded-full bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 text-xs font-bold capitalize">
-                        {currentUser.role} Account
-                      </span>
-                      <button
-                        onClick={handleLogout}
-                        className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white text-xs font-bold transition"
-                      >
-                        <LogOut className="w-3.5 h-3.5" />
-                        <span>Sign Out</span>
-                      </button>
+        {/* ===== VENUES ===== */}
+        {tab === "venues" && isStaff && (
+          <div className="space-y-6">
+            <h2 className="font-display text-3xl font-extrabold">Venues</h2>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {venues.map((v) => {
+                const n = events.filter((e) => (e.venue_details?.id ?? e.venue) === v.id).length;
+                return (
+                  <div key={v.id} className="rounded-3xl border border-line bg-surface p-5 transition hover:-translate-y-0.5 hover:shadow-lg">
+                    <div className="mb-4 grid h-10 w-10 place-items-center rounded-xl bg-brand/10 text-brand"><MapPin className="h-5 w-5" /></div>
+                    <h4 className="font-display text-lg font-bold">{v.name}</h4>
+                    <p className="text-sm text-mute">{v.location}</p>
+                    <div className="mt-4 flex justify-between border-t border-line pt-3 text-xs font-semibold">
+                      <span className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5 text-brand" />{v.capacity} seats</span>
+                      <span className="text-mute">{n} event{n === 1 ? "" : "s"}</span>
                     </div>
                   </div>
-
-                  <div className="grid sm:grid-cols-2 gap-4 pt-4 border-t border-slate-100 dark:border-slate-800 text-xs">
-                    <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200/60 dark:border-slate-800/80 flex items-center gap-3">
-                      <Mail className="w-4 h-4 text-indigo-500" />
-                      <div>
-                        <p className="text-slate-400 text-[11px]">Email Address</p>
-                        <p className="font-semibold text-slate-800 dark:text-slate-200">{currentUser.email || "Not provided"}</p>
-                      </div>
-                    </div>
-                    <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200/60 dark:border-slate-800/80 flex items-center gap-3">
-                      <Phone className="w-4 h-4 text-indigo-500" />
-                      <div>
-                        <p className="text-slate-400 text-[11px]">Phone Number</p>
-                        <p className="font-semibold text-slate-800 dark:text-slate-200">{currentUser.phone || "Not provided"}</p>
-                      </div>
-                    </div>
-                    <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200/60 dark:border-slate-800/80 flex items-center gap-3">
-                      <Building2 className="w-4 h-4 text-indigo-500" />
-                      <div>
-                        <p className="text-slate-400 text-[11px]">Department</p>
-                        <p className="font-semibold text-slate-800 dark:text-slate-200">{currentUser.department || "General"}</p>
-                      </div>
-                    </div>
-                    <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200/60 dark:border-slate-800/80 flex items-center gap-3">
-                      <GraduationCap className="w-4 h-4 text-indigo-500" />
-                      <div>
-                        <p className="text-slate-400 text-[11px]">Academic Batch</p>
-                        <p className="font-semibold text-slate-800 dark:text-slate-200">{currentUser.batch || "N/A"}</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              /* Guest Sign In / Sign Up Panel */
-              <div className="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 sm:p-10 shadow-xl">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 mb-6 border-b border-slate-100 dark:border-slate-800">
-                  <div>
-                    <h2 className="text-2xl font-black text-slate-900 dark:text-white">
-                      {authMode === "signin" ? "Welcome Back" : "Create Your EventHub Account"}
-                    </h2>
-                    <p className="text-xs text-slate-400 mt-1">
-                      {authMode === "signin"
-                        ? "Sign in to register for events and access your digital passes."
-                        : "Register once to participate in campus events or apply as an organizer."}
-                    </p>
-                  </div>
-
-                  {/* Mode Toggle Tabs */}
-                  <div className="flex p-1 rounded-xl bg-slate-100 dark:bg-slate-800 self-start">
-                    <button
-                      type="button"
-                      onClick={() => setAuthMode("signin")}
-                      className={`px-4 py-1.5 rounded-lg text-xs font-bold transition ${
-                        authMode === "signin"
-                          ? "bg-white dark:bg-indigo-600 text-indigo-600 dark:text-white shadow-sm"
-                          : "text-slate-500 dark:text-slate-400"
-                      }`}
-                    >
-                      Sign In
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setAuthMode("signup")}
-                      className={`px-4 py-1.5 rounded-lg text-xs font-bold transition ${
-                        authMode === "signup"
-                          ? "bg-white dark:bg-indigo-600 text-indigo-600 dark:text-white shadow-sm"
-                          : "text-slate-500 dark:text-slate-400"
-                      }`}
-                    >
-                      Sign Up
-                    </button>
-                  </div>
-                </div>
-
-                {authMode === "signin" ? (
-                  <form onSubmit={handleLogin} className="space-y-4 max-w-md mx-auto">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1.5">
-                        Username
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="Enter your username"
-                        value={loginForm.username}
-                        onChange={(e) => setLoginForm({ ...loginForm, username: e.target.value })}
-                        className="w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 focus:outline-none focus:border-indigo-500 text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1.5">
-                        Password
-                      </label>
-                      <input
-                        type="password"
-                        required
-                        placeholder="••••••••"
-                        value={loginForm.password}
-                        onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
-                        className="w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 focus:outline-none focus:border-indigo-500 text-sm"
-                      />
-                    </div>
-                    <button
-                      type="submit"
-                      disabled={loading}
-                      className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm transition shadow-lg shadow-indigo-600/25"
-                    >
-                      {loading ? "Signing In..." : "Sign In to Account"}
-                    </button>
-
-                    <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-950/70 border border-slate-200/60 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400 text-center">
-                      Demo Accounts: <strong>admin</strong> / <strong>organizer</strong> / <strong>student</strong> <br />
-                      Passwords: <code>AdminPass123!</code> · <code>OrganizerPass123!</code> · <code>StudentPass123!</code>
-                    </div>
-                  </form>
-                ) : (
-                  <form onSubmit={handleRegister} className="space-y-4">
-                    <div className="grid sm:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Full Name</label>
-                        <input
-                          type="text"
-                          required
-                          placeholder="e.g. Sayed Obidul"
-                          value={registerForm.full_name}
-                          onChange={(e) => setRegisterForm({ ...registerForm, full_name: e.target.value })}
-                          className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs focus:border-indigo-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Username</label>
-                        <input
-                          type="text"
-                          required
-                          placeholder="Choose a unique username"
-                          value={registerForm.username}
-                          onChange={(e) => setRegisterForm({ ...registerForm, username: e.target.value })}
-                          className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs focus:border-indigo-500"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid sm:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Email Address</label>
-                        <input
-                          type="email"
-                          required
-                          placeholder="student@university.edu"
-                          value={registerForm.email}
-                          onChange={(e) => setRegisterForm({ ...registerForm, email: e.target.value })}
-                          className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs focus:border-indigo-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Phone Number</label>
-                        <input
-                          type="text"
-                          placeholder="+880 1XXX-XXXXXX"
-                          value={registerForm.phone}
-                          onChange={(e) => setRegisterForm({ ...registerForm, phone: e.target.value })}
-                          className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs focus:border-indigo-500"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid sm:grid-cols-3 gap-4">
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Department</label>
-                        <select
-                          value={registerForm.department}
-                          onChange={(e) => setRegisterForm({ ...registerForm, department: e.target.value })}
-                          className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs focus:border-indigo-500"
-                        >
-                          <option value="CSE">CSE</option>
-                          <option value="FMRT">FMRT</option>
-                          <option value="FES">FES</option>
-                          <option value="MGT">MGT</option>
-                          <option value="THM">THM</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Batch</label>
-                        <input
-                          type="text"
-                          placeholder="e.g. 2022-26"
-                          value={registerForm.batch}
-                          onChange={(e) => setRegisterForm({ ...registerForm, batch: e.target.value })}
-                          className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs focus:border-indigo-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Password</label>
-                        <input
-                          type="password"
-                          required
-                          placeholder="Min 6 characters"
-                          value={registerForm.password}
-                          onChange={(e) => setRegisterForm({ ...registerForm, password: e.target.value })}
-                          className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs focus:border-indigo-500"
-                        />
-                      </div>
-                    </div>
-
-                    <label className="flex items-center gap-2.5 p-3 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200/70 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-300 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={registerForm.apply_organizer}
-                        onChange={(e) => setRegisterForm({ ...registerForm, apply_organizer: e.target.checked })}
-                        className="rounded text-indigo-600 focus:ring-0"
-                      />
-                      <span>Request Organizer Privileges (requires Admin approval to host events)</span>
-                    </label>
-
-                    <button
-                      type="submit"
-                      disabled={loading}
-                      className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm transition shadow-lg shadow-indigo-600/25"
-                    >
-                      {loading ? "Creating Account..." : "Create Account & Continue"}
-                    </button>
-                  </form>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ================= MY REGISTRATIONS / PASSES ================= */}
-        {activeTab === "registrations" && currentUser && (
-          <div className="space-y-4">
-            <h2 className="font-black text-xl">My Event Passes & Registrations</h2>
-            <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 overflow-x-auto shadow-sm">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800 text-slate-500">
-                  <tr>
-                    <th className="p-4">Event</th>
-                    <th className="p-4">Date & Time</th>
-                    <th className="p-4">Venue</th>
-                    <th className="p-4">Status</th>
-                    <th className="p-4 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {registrations.map((reg) => (
-                    <tr key={reg.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
-                      <td className="p-4 font-bold text-slate-900 dark:text-white">
-                        {reg.event_details?.title || "Event Registration"}
-                      </td>
-                      <td className="p-4 text-slate-500">
-                        {reg.event_details?.date} · {reg.event_details?.time}
-                      </td>
-                      <td className="p-4 text-slate-500">
-                        {reg.event_details?.venue_details?.name || "Campus"}
-                      </td>
-                      <td className="p-4">
-                        <span
-                          className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                            reg.status === "registered"
-                              ? "bg-emerald-500/10 text-emerald-500"
-                              : "bg-slate-100 dark:bg-slate-800 text-slate-500"
-                          }`}
-                        >
-                          {reg.status}
-                        </span>
-                      </td>
-                      <td className="p-4 text-right space-x-2">
-                        <button
-                          onClick={() => openGoogleCalendar(reg.event_details)}
-                          className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-semibold"
-                        >
-                          Calendar
-                        </button>
-                        <button
-                          onClick={() => setShowTicketModal(reg.event_details)}
-                          className="px-3 py-1.5 rounded-xl bg-indigo-600 text-white font-bold"
-                        >
-                          QR Pass
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                  {registrations.length === 0 && (
-                    <tr>
-                      <td colSpan="5" className="p-8 text-center text-slate-400">
-                        You haven't registered for any events yet. Explore events on the Home tab!
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+                );
+              })}
             </div>
           </div>
         )}
 
-        {/* ================= ADMIN USER MANAGEMENT ================= */}
-        {activeTab === "users" && currentUser?.role === "admin" && (
-          <div className="space-y-4">
-            <h2 className="font-black text-xl">User Directory & Organizer Approvals</h2>
-            <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 overflow-x-auto shadow-sm">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800 text-slate-500">
-                  <tr>
-                    <th className="p-4">Member</th>
-                    <th className="p-4">Contact</th>
-                    <th className="p-4">Dept & Batch</th>
-                    <th className="p-4">Role</th>
-                    <th className="p-4 text-right">Action</th>
-                  </tr>
+        {/* ===== ADMIN ===== */}
+        {tab === "users" && isAdmin && (
+          <div className="space-y-6">
+            <div>
+              <h2 className="font-display text-3xl font-extrabold">Members</h2>
+              <p className="text-sm text-mute">{users.length} total · {pending} awaiting organizer approval</p>
+            </div>
+            <div className="overflow-x-auto rounded-3xl border border-line bg-surface">
+              <table className="w-full text-left text-sm">
+                <thead className="border-b border-line bg-sunken text-xs uppercase tracking-wide text-mute">
+                  <tr>{["Member", "Contact", "Dept · Batch", "Role", ""].map((h) => <th key={h} className="p-4 font-semibold">{h}</th>)}</tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                <tbody className="divide-y divide-line">
                   {users.map((u) => (
-                    <tr key={u.id}>
-                      <td className="p-4 font-bold">
-                        <div>{u.full_name || u.username}</div>
-                        <div className="text-[11px] font-normal text-slate-400">@{u.username}</div>
-                      </td>
-                      <td className="p-4 text-slate-500">
-                        <div>{u.email || "No email"}</div>
-                        <div className="text-[11px]">{u.phone || "No phone"}</div>
-                      </td>
-                      <td className="p-4 text-slate-500">
-                        {u.department} · {u.batch}
-                      </td>
+                    <tr key={u.id} className="transition hover:bg-sunken/60">
                       <td className="p-4">
-                        <span
-                          className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                            u.role === "admin"
-                              ? "bg-purple-500/10 text-purple-500"
-                              : u.role === "organizer"
-                              ? "bg-indigo-500/10 text-indigo-500"
-                              : "bg-slate-100 dark:bg-slate-800 text-slate-500"
-                          }`}
-                        >
-                          {u.role}
-                        </span>
+                        <div className="flex items-center gap-3">
+                          <Avatar u={u} />
+                          <div><div className="font-semibold">{u.full_name || u.username}</div><div className="text-xs text-mute">@{u.username}</div></div>
+                        </div>
+                      </td>
+                      <td className="p-4 text-mute"><div>{u.email || "—"}</div><div className="text-xs">{u.phone || "—"}</div></td>
+                      <td className="p-4 text-mute">{u.department} · {u.batch}</td>
+                      <td className="p-4">
+                        <span className={cx("rounded-full px-2.5 py-1 text-[11px] font-bold capitalize",
+                          u.role === "admin" ? "bg-purple-500/10 text-purple-500" : u.role === "organizer" ? "bg-brand/10 text-brand" : "bg-sunken text-mute")}>{u.role}</span>
                       </td>
                       <td className="p-4 text-right">
-                        {u.requested_role === "organizer" && u.role !== "organizer" ? (
-                          <button
-                            onClick={() => handleApproveOrganizer(u.id)}
-                            className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold"
-                          >
-                            Approve Organizer
-                          </button>
-                        ) : (
-                          <span className="text-slate-400 text-[11px]">Verified</span>
-                        )}
+                        {u.requested_role === "organizer" && u.role !== "organizer"
+                          ? <Btn className="!px-3 !py-1.5" onClick={() => approve(u.id)}>Approve organizer</Btn>
+                          : <span className="text-xs text-mute">—</span>}
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            </div>
-          </div>
-        )}
-
-        {/* ================= VENUES TAB ================= */}
-        {activeTab === "venues" && (
-          <div className="space-y-4">
-            <h2 className="font-black text-xl">Campus Venues</h2>
-            <div className="grid sm:grid-cols-2 md:grid-cols-4 gap-4">
-              {venues.map((v) => (
-                <div key={v.id} className="p-5 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm">
-                  <MapPin className="w-5 h-5 text-indigo-500 mb-3" />
-                  <h4 className="font-bold text-sm">{v.name}</h4>
-                  <p className="text-xs text-slate-400 mt-0.5">{v.location}</p>
-                  <p className="text-xs font-bold text-indigo-500 mt-3">Capacity: {v.capacity} Seats</p>
-                </div>
-              ))}
             </div>
           </div>
         )}
       </main>
 
-      {/* Mobile Bottom Navigation Bar */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-white/95 dark:bg-slate-950/95 backdrop-blur-xl border-t border-slate-200 dark:border-slate-800 flex items-center justify-around z-30">
-        {navItems.map((tab) => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex flex-col items-center gap-1 text-[10px] font-bold transition ${
-                isActive ? "text-indigo-600 dark:text-indigo-400" : "text-slate-400"
-              }`}
-            >
-              <Icon className="w-5 h-5" />
-              <span>{tab.label}</span>
-            </button>
-          );
-        })}
+      {/* Mobile bottom nav */}
+      <nav className="fixed inset-x-0 bottom-0 z-30 flex h-16 items-center justify-around border-t border-line bg-bg/90 backdrop-blur-xl md:hidden">
+        {nav.map((t) => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            className={cx("relative flex flex-col items-center gap-1 px-3 text-[11px] font-semibold", tab === t.id ? "text-brand" : "text-mute")}>
+            <t.icon className="h-5 w-5" />{t.label}
+            {!!t.badge && <span className="absolute -right-0.5 -top-1 rounded-full bg-brand px-1.5 text-[9px] font-bold text-white">{t.badge}</span>}
+          </button>
+        ))}
       </nav>
 
-      {/* QR Poster Modal */}
-      {showQRModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 max-w-sm w-full border border-slate-200 dark:border-slate-800 text-center space-y-4 shadow-2xl">
-            <div className="flex justify-between items-center">
-              <span className="text-xs font-bold text-indigo-500">Event Share QR</span>
-              <button onClick={() => setShowQRModal(null)} className="p-1 text-slate-400 hover:text-white">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <h4 className="font-bold text-base">{showQRModal.title}</h4>
-            <div className="p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl flex items-center justify-center">
-              <img
-                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(
-                  `${window.location.origin}/?event=${showQRModal.id}`
-                )}`}
-                alt="Event QR"
-                className="w-44 h-44 rounded-xl"
-              />
-            </div>
-            <p className="text-xs text-slate-400">
-              Scan this code to view event details. Sign in required to complete registration.
-            </p>
+      {/* Event detail drawer */}
+      {detail && (
+        <Modal side onClose={() => setDetail(null)}>
+          <div className="sticky top-0 z-10 flex items-center justify-between border-b border-line bg-surface/90 px-6 py-3 backdrop-blur">
+            <span className="text-sm font-semibold">Event details</span>
+            <CloseBtn onClick={() => setDetail(null)} />
           </div>
-        </div>
+          <Banner e={detail} className="h-36" />
+          <div className="space-y-6 p-6">
+            <div>
+              <h2 className="font-display text-3xl font-extrabold leading-tight">{detail.title}</h2>
+              <p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-mute">{detail.description || "No description provided."}</p>
+            </div>
+            <div className="space-y-3 rounded-2xl border border-line bg-sunken p-4">
+              <Meta icon={Clock}>{detail.date} at {detail.time}</Meta>
+              <Meta icon={MapPin}>{detail.venue_details?.name || "Main Campus Venue"}{detail.venue_details?.location ? ` · ${detail.venue_details.location}` : ""}</Meta>
+              <Meta icon={Calendar}>Registration closes {detail.registration_deadline || "—"}</Meta>
+              <Meta icon={Users}>Capacity {detail.capacity}</Meta>
+            </div>
+            <Seats e={detail} />
+            <div className="flex gap-2">{actions(detail, true)}</div>
+            <div className="grid grid-cols-2 gap-2">
+              <Btn v="ghost" onClick={() => gcal(detail)}><Calendar className="h-4 w-4" />Add to calendar</Btn>
+              <Btn v="ghost" onClick={() => setQr(detail)}><QrCode className="h-4 w-4" />Share QR</Btn>
+            </div>
+          </div>
+        </Modal>
       )}
 
-      {/* Digital Ticket Pass Modal */}
-      {showTicketModal && currentUser && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 max-w-sm w-full border border-slate-200 dark:border-slate-800 space-y-4 shadow-2xl">
-            <div className="flex justify-between items-center">
-              <span className="text-xs font-bold text-emerald-500 flex items-center gap-1.5">
-                <Check className="w-4 h-4" /> Verified Entry Pass
-              </span>
-              <button onClick={() => setShowTicketModal(null)} className="p-1 text-slate-400">
-                <X className="w-4 h-4" />
-              </button>
+      {/* Share QR */}
+      {qr && (
+        <Modal onClose={() => setQr(null)}>
+          <div className="space-y-4 p-6 text-center">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-brand">Share event</span><CloseBtn onClick={() => setQr(null)} />
             </div>
-            <div className="border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-2xl p-5 text-center space-y-3">
-              <h4 className="font-black text-base">{showTicketModal.title}</h4>
-              <p className="text-xs text-slate-400">
-                {showTicketModal.date} · {showTicketModal.time}
-              </p>
-              <div className="py-2 flex justify-center">
-                <img
-                  src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(
-                    `PASS:${showTicketModal.id}:${currentUser.username}`
-                  )}`}
-                  alt="Ticket Pass"
-                  className="w-36 h-36 rounded-xl"
-                />
-              </div>
-              <p className="text-[11px] text-slate-400 font-mono">
-                PASS #{showTicketModal.id}-{(currentUser.username || "").toUpperCase()}
-              </p>
+            <h4 className="font-display text-xl font-bold">{qr.title}</h4>
+            <div className="mx-auto w-fit rounded-2xl bg-white p-4 shadow-inner">
+              <img alt="Event QR" className="h-44 w-44"
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(`${window.location.origin}/?event=${qr.id}`)}`} />
             </div>
+            <p className="text-xs text-mute">Scan to view event details. Sign-in is required to register.</p>
+            <Btn v="ghost" className="w-full" onClick={() => { navigator.clipboard?.writeText(`${window.location.origin}/?event=${qr.id}`); notify("success", "Link copied."); }}>Copy link</Btn>
           </div>
-        </div>
+        </Modal>
       )}
 
-      {/* Create Event Modal */}
-      {showCreateModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 max-w-md w-full border border-slate-200 dark:border-slate-800 space-y-4 shadow-2xl">
-            <div className="flex justify-between items-center">
-              <h4 className="font-bold text-base">Publish New Event</h4>
-              <button onClick={() => setShowCreateModal(false)} className="p-1 text-slate-400">
-                <X className="w-4 h-4" />
-              </button>
+      {/* Ticket */}
+      {pass && user && (
+        <Modal onClose={() => setPass(null)} panel="max-w-xs">
+          <div className={cx("dots bg-gradient-to-br p-6 text-white", TONE[pass.category] || TONE.Workshop)}>
+            <div className="flex items-center justify-between text-xs font-semibold">
+              <span className="flex items-center gap-1.5"><Check className="h-4 w-4" />Verified pass</span>
+              <button onClick={() => setPass(null)} aria-label="Close"><X className="h-4 w-4" /></button>
             </div>
-            <form onSubmit={handleCreateEvent} className="space-y-3 text-xs">
-              <div>
-                <label className="block font-semibold mb-1">Event Title</label>
-                <input
-                  type="text"
-                  required
-                  value={newEvent.title}
-                  onChange={(e) => setNewEvent({ ...newEvent, title: e.target.value })}
-                  className="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold mb-1">Category</label>
-                  <select
-                    value={newEvent.category}
-                    onChange={(e) => setNewEvent({ ...newEvent, category: e.target.value })}
-                    className="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800"
-                  >
-                    <option value="Workshop">Workshop</option>
-                    <option value="Competition">Competition</option>
-                    <option value="Cultural">Cultural</option>
-                    <option value="Career">Career</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block font-semibold mb-1">Venue</label>
-                  <select
-                    required
-                    value={newEvent.venue}
-                    onChange={(e) => setNewEvent({ ...newEvent, venue: e.target.value })}
-                    className="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800"
-                  >
-                    <option value="">Select Venue</option>
-                    {venues.map((v) => (
-                      <option key={v.id} value={v.id}>
-                        {v.name} (Cap: {v.capacity})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold mb-1">Event Date</label>
-                  <input
-                    type="date"
-                    required
-                    value={newEvent.date}
-                    onChange={(e) => setNewEvent({ ...newEvent, date: e.target.value })}
-                    className="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800"
-                  />
-                </div>
-                <div>
-                  <label className="block font-semibold mb-1">Start Time</label>
-                  <input
-                    type="time"
-                    required
-                    value={newEvent.time}
-                    onChange={(e) => setNewEvent({ ...newEvent, time: e.target.value })}
-                    className="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold mb-1">Max Capacity</label>
-                  <input
-                    type="number"
-                    required
-                    value={newEvent.capacity}
-                    onChange={(e) => setNewEvent({ ...newEvent, capacity: e.target.value })}
-                    className="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800"
-                  />
-                </div>
-                <div>
-                  <label className="block font-semibold mb-1">Registration Deadline</label>
-                  <input
-                    type="date"
-                    required
-                    value={newEvent.registration_deadline}
-                    onChange={(e) => setNewEvent({ ...newEvent, registration_deadline: e.target.value })}
-                    className="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block font-semibold mb-1">Description</label>
-                <textarea
-                  rows="3"
-                  value={newEvent.description}
-                  onChange={(e) => setNewEvent({ ...newEvent, description: e.target.value })}
-                  className="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800"
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-3 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-500 transition"
-              >
-                {loading ? "Publishing..." : "Publish Event"}
-              </button>
-            </form>
+            <h4 className="font-display mt-5 text-2xl font-extrabold leading-tight">{pass.title}</h4>
+            <p className="mt-1 text-sm text-white/80">{pass.date} · {pass.time}</p>
           </div>
-        </div>
+          <div className="relative border-t-2 border-dashed border-line px-6 pb-6 pt-8 text-center">
+            <span className="absolute -left-3 -top-3 h-6 w-6 rounded-full bg-black/55" />
+            <span className="absolute -right-3 -top-3 h-6 w-6 rounded-full bg-black/55" />
+            <div className="mx-auto w-fit rounded-2xl bg-white p-3">
+              <img alt="Ticket QR" className="h-36 w-36"
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(`PASS:${pass.id}:${user.username}`)}`} />
+            </div>
+            <p className="mt-4 font-mono text-xs tracking-wider text-mute">PASS #{pass.id}-{(user.username || "").toUpperCase()}</p>
+            <p className="mt-1 text-sm font-semibold">{user.full_name || user.username}</p>
+          </div>
+        </Modal>
+      )}
+
+      {/* Create event */}
+      {creating && (
+        <Modal onClose={() => setCreating(false)} panel="max-w-lg">
+          <form onSubmit={createEvent} className="space-y-4 p-6">
+            <div className="flex items-center justify-between">
+              <h4 className="font-display text-xl font-extrabold">Publish new event</h4><CloseBtn onClick={() => setCreating(false)} />
+            </div>
+            <Field label="Title" required placeholder="e.g. Intro to Machine Learning" value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} />
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Category" value={draft.category} onChange={(e) => setDraft({ ...draft, category: e.target.value })}
+                options={CATS.slice(1).map((c) => <option key={c}>{c}</option>)} />
+              <Field label="Venue" required value={draft.venue} onChange={(e) => setDraft({ ...draft, venue: e.target.value })}
+                options={<><option value="">Select venue</option>{venues.map((v) => <option key={v.id} value={v.id}>{v.name} ({v.capacity})</option>)}</>} />
+              <Field label="Date" required type="date" value={draft.date} onChange={(e) => setDraft({ ...draft, date: e.target.value })} />
+              <Field label="Start time" required type="time" value={draft.time} onChange={(e) => setDraft({ ...draft, time: e.target.value })} />
+              <Field label="Capacity" required type="number" min="1" value={draft.capacity} onChange={(e) => setDraft({ ...draft, capacity: e.target.value })} />
+              <Field label="Registration deadline" required type="date" value={draft.registration_deadline} onChange={(e) => setDraft({ ...draft, registration_deadline: e.target.value })} />
+            </div>
+            <Field label="Description" rows={3} placeholder="What should attendees know?" value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} />
+            <Btn type="submit" disabled={busy} className="w-full py-3">{busy ? "Publishing…" : "Publish event"}</Btn>
+          </form>
+        </Modal>
       )}
     </div>
   );
