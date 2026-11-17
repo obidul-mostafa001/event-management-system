@@ -5,7 +5,8 @@
   --line: 231 229 228;
   --ink: 28 25 23;
   --mute: 113 113 122;
-  --brand: 79 70 229;
+  --brand: 11 91 211;
+  --accent: 0 180 255;
 }
 .dark {
   --bg: 10 10 12;
@@ -14,7 +15,8 @@
   --line: 44 44 52;
   --ink: 244 244 245;
   --mute: 161 161 170;
-  --brand: 108 114 246;
+  --brand: 37 99 235;
+  --accent: 34 195 255;
 }
 
 html { color-scheme: light; scroll-behavior: smooth; }
