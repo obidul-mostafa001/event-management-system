@@ -49,6 +49,7 @@ const Btn = ({ v = "primary", className, ...p }) => {
     ghost: "border border-line bg-surface hover:bg-sunken",
     danger: "border border-rose-500/30 text-rose-500 hover:bg-rose-500/10",
     dark: "bg-ink text-bg hover:opacity-90",
+    accent: "bg-accent text-slate-950 shadow-lg shadow-accent/30 hover:brightness-110",
   }[v];
   return (
     <button
@@ -113,10 +114,10 @@ const CloseBtn = ({ onClick }) => (
 
 const Logo = () => (
   <div className="flex items-center gap-2.5">
-    <div className="grid h-9 w-9 place-items-center rounded-xl bg-brand text-white shadow-lg shadow-brand/30">
+    <div className="grid h-9 w-9 place-items-center rounded-xl bg-white/15 text-white">
       <Calendar className="h-5 w-5" />
     </div>
-    <span className="font-display text-xl font-extrabold tracking-tight">EventHub</span>
+    <span className="font-display text-xl font-extrabold tracking-tight">Event Management</span>
   </div>
 );
 
@@ -186,7 +187,7 @@ const Empty = ({ icon: I, title, text, children }) => (
 export default function EventHub() {
   const [user, setUser] = useState(() => { try { return JSON.parse(localStorage.getItem("eh_user")); } catch { return null; } });
   const [dark, setDark] = useState(() => document.documentElement.classList.contains("dark"));
-  const [tab, setTab] = useState("home");
+  const [tab, setTab] = useState("welcome");
   const [authMode, setAuthMode] = useState("signin");
   const [events, setEvents] = useState([]);
   const [venues, setVenues] = useState([]);
@@ -337,12 +338,20 @@ export default function EventHub() {
   const first = (user?.full_name || user?.username || "").split(" ")[0];
   const pending = users.filter((u) => u.requested_role === "organizer" && u.role !== "organizer").length;
 
+  const goLogin = (mode = "signin") => { setAuthMode(mode); setTab("profile"); };
   const nav = [
-    { id: "home", label: "Explore", icon: Sparkles },
-    ...(user ? [{ id: "registrations", label: "My Passes", icon: CheckCircle2, badge: mine.length }] : []),
+    { id: "home", label: "Home", icon: Sparkles },
+    user
+      ? { id: "registrations", label: "My Bookings", icon: CheckCircle2, badge: mine.length }
+      : { id: "bookings", label: "My Bookings", icon: CheckCircle2, go: () => { notify("warning", "Please log in to see your bookings."); goLogin(); } },
     ...(isStaff ? [{ id: "venues", label: "Venues", icon: MapPin }] : []),
     ...(isAdmin ? [{ id: "users", label: "Admin", icon: Shield, badge: pending }] : []),
-    { id: "profile", label: user ? "Account" : "Sign in", icon: User },
+    ...(user
+      ? [{ id: "profile", label: "Account", icon: User }]
+      : [
+          { id: "login", label: "Login", icon: User, go: () => goLogin("signin"), active: tab === "profile" && authMode === "signin" },
+          { id: "register", label: "Register", icon: Plus, go: () => goLogin("signup"), active: tab === "profile" && authMode === "signup" },
+        ]),
   ];
 
   const actions = (e, full) =>
@@ -380,69 +389,83 @@ export default function EventHub() {
       </div>
 
       {/* Header */}
-      <header className="sticky top-0 z-30 border-b border-line bg-bg/80 backdrop-blur-xl">
+      <header className="sticky top-0 z-30 bg-brand text-white shadow-lg shadow-brand/20">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
-          <button onClick={() => setTab("home")} aria-label="Home"><Logo /></button>
-
+          <button onClick={() => setTab("welcome")} aria-label="Welcome page"><Logo /></button>
           <nav className="hidden items-center gap-1 md:flex">
             {nav.map((t) => (
               <button
-                key={t.id} onClick={() => setTab(t.id)}
-                className={cx("relative flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold transition",
-                  tab === t.id ? "bg-brand/10 text-brand" : "text-mute hover:bg-sunken hover:text-ink")}
+                key={t.id} onClick={t.go || (() => setTab(t.id))}
+                className={cx("flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold transition",
+                  (t.active ?? tab === t.id) ? "bg-white/15 text-white" : "text-white/75 hover:bg-white/10 hover:text-white")}
               >
-                <t.icon className="h-4 w-4" />{t.label}
-                {!!t.badge && <span className="rounded-full bg-brand px-1.5 text-[10px] font-bold text-white">{t.badge}</span>}
+                {t.label}
+                {!!t.badge && <span className="rounded-full bg-accent px-1.5 text-[10px] font-bold text-slate-950">{t.badge}</span>}
               </button>
             ))}
           </nav>
-
           <div className="flex items-center gap-2">
             {isStaff && (
-              <Btn onClick={() => setCreating(true)}>
+              <Btn v="accent" onClick={() => setCreating(true)}>
                 <Plus className="h-4 w-4" /><span className="hidden sm:inline">Host event</span>
               </Btn>
             )}
             <button
               onClick={() => setDark(!dark)} aria-label="Toggle theme"
-              className="rounded-xl border border-line bg-surface p-2.5 text-mute transition hover:text-ink"
+              className="rounded-xl border border-white/20 bg-white/10 p-2.5 text-white transition hover:bg-white/20"
             >{dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}</button>
-            {user ? (
-              <button onClick={() => setTab("profile")} aria-label="Account"><Avatar u={user} size="h-10 w-10 text-sm" /></button>
-            ) : (
-              <Btn v="dark" onClick={() => { setAuthMode("signin"); setTab("profile"); }}>Sign in</Btn>
-            )}
+            {user && <button onClick={() => setTab("profile")} aria-label="Account"><Avatar u={user} size="h-10 w-10 text-sm !bg-white/20" /></button>}
           </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-4 pb-28 pt-6 sm:px-6 md:pb-14">
+      {/* ===== WELCOME (full-screen landing) ===== */}
+      {tab === "welcome" && (
+        <section
+          className="relative flex min-h-[calc(100vh-4rem)] items-center justify-center overflow-hidden px-6 py-16 text-center text-white"
+          style={{
+            backgroundImage: "linear-gradient(rgba(2,6,23,.60), rgba(2,6,23,.80)), url(/hero.jpg), linear-gradient(135deg,#0b1b3a,#1d4ed8)",
+            backgroundSize: "cover", backgroundPosition: "center",
+          }}
+        >
+          <div className="anim-pop max-w-4xl">
+            <span className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-1.5 text-xs font-semibold backdrop-blur">
+              <Sparkles className="h-3.5 w-3.5 text-accent" />Campus & enterprise events
+            </span>
+            <h1 className="font-display mt-6 text-4xl font-extrabold leading-[1.05] tracking-tight sm:text-6xl lg:text-7xl">
+              Welcome to the <span className="text-accent">Event Management</span> Website!
+            </h1>
+            <p className="mx-auto mt-6 max-w-xl text-lg text-white/80">
+              Discover, plan, and book amazing events with ease. Let’s make your next event unforgettable.
+            </p>
+            <Btn v="accent" className="mt-10 !rounded-full !px-8 !py-4 text-base" onClick={() => setTab("home")}>
+              Enter Home Page<ArrowRight className="h-5 w-5" />
+            </Btn>
+            <div className="mx-auto mt-14 grid max-w-2xl gap-3 text-sm sm:grid-cols-3">
+              {[[Shield, "Verified profiles"], [QrCode, "Instant QR passes"], [Calendar, "Calendar sync"]].map(([I, l]) => (
+                <div key={l} className="flex items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/10 px-4 py-3 backdrop-blur">
+                  <I className="h-4 w-4 text-accent" />{l}
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      <main className={cx("mx-auto max-w-7xl px-4 pb-28 pt-6 sm:px-6 md:pb-14", tab === "welcome" && "hidden")}>
         {/* ===== EXPLORE ===== */}
         {tab === "home" && (
           <div className="space-y-8">
-            <section className="mesh relative overflow-hidden rounded-[2rem] border border-line bg-surface px-6 py-10 sm:px-12 sm:py-14">
-              <p className="text-sm font-semibold text-brand">{user ? `Welcome back, ${first}` : "Campus & enterprise events"}</p>
-              <h1 className="font-display mt-3 max-w-2xl text-4xl font-extrabold leading-[1.05] tracking-tight sm:text-6xl">
-                Find your next <span className="text-brand">great event.</span>
-              </h1>
-              <p className="mt-4 max-w-xl text-base text-mute">
-                Workshops, hackathons, cultural fests and career fairs. Register in one tap, get a QR pass, sync to your calendar.
-              </p>
-              <div className="mt-8 flex max-w-2xl flex-col gap-3 sm:flex-row">
-                <div className="relative flex-1">
-                  <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-mute" />
-                  <input
-                    value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search events…"
-                    className={cx(inputCls, "!rounded-2xl !bg-surface py-3.5 pl-11 shadow-sm")}
-                  />
-                </div>
-                {!user && (
-                  <Btn className="!rounded-2xl px-6" onClick={() => { setAuthMode("signup"); setTab("profile"); }}>
-                    Create account<ArrowRight className="h-4 w-4" />
-                  </Btn>
-                )}
+            <section className="space-y-4">
+              <p className="text-sm font-semibold text-brand">{user ? `Welcome back, ${first}` : "Browse and book events"}</p>
+              <div className="relative max-w-2xl">
+                <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-mute" />
+                <input
+                  value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search events…"
+                  className={cx(inputCls, "!rounded-2xl !bg-surface py-3.5 pl-11 shadow-sm")}
+                />
               </div>
-              <div className="mt-5 flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2">
                 {CATS.map((c) => (
                   <button
                     key={c} onClick={() => setCat(c)}
@@ -508,7 +531,7 @@ export default function EventHub() {
         {/* ===== AUTH / PROFILE ===== */}
         {tab === "profile" && (user ? (
           <div className="mx-auto max-w-3xl overflow-hidden rounded-[2rem] border border-line bg-surface">
-            <div className="dots h-32 bg-gradient-to-br from-indigo-600 to-violet-700" />
+            <div className="dots h-32 bg-gradient-to-br from-blue-700 to-sky-600" />
             <div className="px-6 pb-8 sm:px-8">
               <div className="-mt-12 mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
                 <div className="flex items-end gap-4">
@@ -532,7 +555,7 @@ export default function EventHub() {
           </div>
         ) : (
           <div className="mx-auto grid max-w-5xl overflow-hidden rounded-[2rem] border border-line bg-surface lg:grid-cols-5">
-            <aside className="dots hidden flex-col justify-between bg-gradient-to-br from-indigo-600 to-violet-700 p-10 text-white lg:col-span-2 lg:flex">
+            <aside className="dots hidden flex-col justify-between bg-gradient-to-br from-blue-700 to-sky-600 p-10 text-white lg:col-span-2 lg:flex">
               <div className="flex items-center gap-2.5 font-display text-xl font-extrabold"><Calendar className="h-6 w-6" />EventHub</div>
               <div>
                 <h2 className="font-display text-4xl font-extrabold leading-tight">Your campus, one calendar.</h2>
@@ -590,7 +613,7 @@ export default function EventHub() {
         {tab === "registrations" && user && (
           <div className="space-y-6">
             <div>
-              <h2 className="font-display text-3xl font-extrabold">My passes</h2>
+              <h2 className="font-display text-3xl font-extrabold">My bookings</h2>
               <p className="text-sm text-mute">{mine.length} active registration{mine.length === 1 ? "" : "s"}</p>
             </div>
             {!regs.length ? (
@@ -694,8 +717,7 @@ export default function EventHub() {
       {/* Mobile bottom nav */}
       <nav className="fixed inset-x-0 bottom-0 z-30 flex h-16 items-center justify-around border-t border-line bg-bg/90 backdrop-blur-xl md:hidden">
         {nav.map((t) => (
-          <button key={t.id} onClick={() => setTab(t.id)}
-            className={cx("relative flex flex-col items-center gap-1 px-3 text-[11px] font-semibold", tab === t.id ? "text-brand" : "text-mute")}>
+          <button key={t.id} onClick={t.go || (() => setTab(t.id))} className={cx("relative flex flex-col items-center gap-1 px-3 text-[11px] font-semibold", (t.active ?? tab === t.id) ? "text-brand" : "text-mute")}>
             <t.icon className="h-5 w-5" />{t.label}
             {!!t.badge && <span className="absolute -right-0.5 -top-1 rounded-full bg-brand px-1.5 text-[9px] font-bold text-white">{t.badge}</span>}
           </button>
