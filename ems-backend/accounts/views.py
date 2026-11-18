@@ -1,10 +1,16 @@
 from rest_framework import generics, permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.views import TokenObtainPairView
 
 from .models import User
-from .serializers import RegisterSerializer, UserSerializer
+from .serializers import LoginSerializer, RegisterSerializer, UserRoleUpdateSerializer, UserSerializer
+
+
+class LoginView(TokenObtainPairView):
+    serializer_class = LoginSerializer
 
 
 class RegisterView(generics.CreateAPIView):
@@ -45,12 +51,21 @@ class UserListView(generics.ListAPIView):
         return super().get_queryset()
 
 
-class UserDeleteView(generics.DestroyAPIView):
-    """Admin-only: remove a user account."""
+class UserDeleteView(generics.RetrieveUpdateDestroyAPIView):
+    """Admin-only: view, approve/decline organizer requests (PATCH) or remove a user."""
     queryset = User.objects.all()
     permission_classes = [permissions.IsAuthenticated]
+    http_method_names = ["get", "patch", "delete", "head", "options"]
 
-    def delete(self, request, *args, **kwargs):
+    def get_serializer_class(self):
+        return UserRoleUpdateSerializer if self.request.method == "PATCH" else UserSerializer
+
+    def check_permissions(self, request):
+        super().check_permissions(request)
         if request.user.role != User.Role.ADMIN:
-            return Response({"detail": "Only admins can remove users."}, status=403)
-        return super().delete(request, *args, **kwargs)
+            raise PermissionDenied("Only admins can manage users.")
+
+    def perform_destroy(self, instance):
+        if instance.pk == self.request.user.pk:
+            raise ValidationError({"detail": "You cannot remove your own account."})
+        instance.delete()
