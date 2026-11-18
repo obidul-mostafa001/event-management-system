@@ -15,7 +15,7 @@ from .serializers import EventSerializer, RegistrationSerializer, VenueSerialize
 class VenueListCreateView(generics.ListCreateAPIView):
     queryset = Venue.objects.all().order_by("name")
     serializer_class = VenueSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsOrganizerOrAdminForWrite]
 
 
 class EventListCreateView(generics.ListCreateAPIView):
