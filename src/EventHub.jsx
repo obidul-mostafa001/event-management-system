@@ -5,7 +5,7 @@ import {
   GraduationCap, Building2,
 } from "lucide-react";
 
-const API_BASE = import.meta.env?.VITE_API_URL || "http://127.0.0.1:8000";
+const API_BASE = (import.meta.env?.VITE_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
 const CATS = ["All", "Workshop", "Competition", "Cultural", "Career"];
 const TONE = {
   Workshop: "from-sky-500 to-indigo-600",
@@ -23,6 +23,9 @@ const cx = (...a) => a.filter(Boolean).join(" ");
 const list = (d) => (Array.isArray(d) ? d : d?.results || []);
 const dparts = (s) => { const [, m, d] = (s || "").split("-"); return { m: MON[+m - 1] || "—", d: d || "—" }; };
 const left = (e) => (e.capacity || 100) - (e.registered_count || 0);
+const hm = (t) => (t || "").slice(0, 5);
+const today = () => new Date().toLocaleDateString("en-CA");
+const closed = (e) => !!e.registration_deadline && e.registration_deadline < today();
 const errText = (d, fb) => {
   if (!d) return fb;
   if (d.detail) return d.detail;
@@ -38,7 +41,7 @@ async function api(path, { method = "GET", body, token } = {}) {
   });
   let data = null;
   try { data = await res.json(); } catch { /* empty body */ }
-  return { ok: res.ok, data };
+  return { ok: res.ok, status: res.status, data };
 }
 
 /* ---------- UI primitives ---------- */
@@ -202,6 +205,7 @@ export default function EventHub() {
   const [qr, setQr] = useState(null);
   const [pass, setPass] = useState(null);
   const [creating, setCreating] = useState(false);
+  const [editId, setEditId] = useState(null);
   const [login, setLogin] = useState({ username: "", password: "" });
   const [reg, setReg] = useState({
     username: "", password: "", email: "", full_name: "", phone: "",
@@ -229,13 +233,18 @@ export default function EventHub() {
     setLoading(true);
     try {
       const [ev, vn] = await Promise.all([api("/events/", { token }), api("/venues/", { token })]);
-      if (ev.ok) setEvents(list(ev.data));
+      if (ev.ok) { const evs = list(ev.data); setEvents(evs); setDetail((d) => d && (evs.find((x) => x.id === d.id) || null)); }
       if (vn.ok) setVenues(list(vn.data));
       if (user) {
         const [rg, us] = await Promise.all([
           api("/registrations/", { token }),
           isAdmin ? api("/auth/users/", { token }) : null,
         ]);
+        if (rg.status === 401) {
+          localStorage.removeItem("eh_user"); localStorage.removeItem("eh_token");
+          setUser(null); notify("warning", "Session expired. Please log in again.");
+          return;
+        }
         if (rg.ok) setRegs(list(rg.data));
         if (us?.ok) setUsers(list(us.data));
       } else setRegs([]);
@@ -262,8 +271,10 @@ export default function EventHub() {
     setBusy(true);
     try {
       const { ok, data } = await api("/auth/login/", { method: "POST", body: login });
-      ok ? finishAuth(data, `Welcome back, ${data.user?.full_name || data.user?.username}!`)
-        : notify("error", errText(data, "Invalid login credentials."));
+      if (!ok) return notify("error", errText(data, "Invalid login credentials."));
+      let u = data.user;
+      if (!u) u = (await api("/auth/me/", { token: data.access })).data;
+      finishAuth({ user: u, access: data.access }, `Welcome back, ${u?.full_name || u?.username}!`);
     } catch { notify("error", "Backend unreachable. Make sure the server is running."); }
     finally { setBusy(false); }
   };
@@ -293,7 +304,9 @@ export default function EventHub() {
       return;
     }
     try {
-      const { ok, data } = await api(`/events/${id}/${kind}/`, { method: "POST", token });
+      const { ok, data } = kind === "register"
+        ? await api("/registrations/", { method: "POST", token, body: { event: id } })
+        : await api(`/events/${id}/cancel/`, { method: "POST", token });
       if (ok) {
         notify("success", kind === "register" ? "You're in! Your pass is ready." : "Registration cancelled.");
         load();
@@ -305,16 +318,35 @@ export default function EventHub() {
     e.preventDefault();
     setBusy(true);
     try {
-      const { ok, data } = await api("/events/", { method: "POST", token, body: draft });
-      if (ok) { setCreating(false); setDraft(BLANK_EVENT); notify("success", "Event published."); load(); }
+      const { ok, data } = await api(editId ? `/events/${editId}/` : "/events/", { method: editId ? "PATCH" : "POST", token, body: draft });
+      if (ok) { closeForm(); setDraft(BLANK_EVENT); notify("success", editId ? "Event updated." : "Event published."); load(); }
       else notify("error", errText(data, "Could not publish event."));
     } catch { notify("error", "Server unreachable."); }
     finally { setBusy(false); }
   };
 
-  const approve = async (id) => {
-    const { ok } = await api(`/auth/users/${id}/`, { method: "PATCH", token, body: { role: "organizer", requested_role: null } });
-    if (ok) { notify("success", "Organizer approved."); load(); }
+  const closeForm = () => { setCreating(false); setEditId(null); };
+  const openEdit = (e) => {
+    setDraft({ title: e.title, description: e.description, category: e.category, date: e.date, time: hm(e.time),
+      venue: e.venue, capacity: e.capacity, registration_deadline: e.registration_deadline });
+    setEditId(e.id); setDetail(null); setCreating(true);
+  };
+  const deleteEvent = async (e) => {
+    if (!window.confirm(`Delete "${e.title}"? This also removes its registrations.`)) return;
+    const { ok, data } = await api(`/events/${e.id}/`, { method: "DELETE", token });
+    if (ok) { notify("success", "Event deleted."); setDetail(null); load(); }
+    else notify("error", errText(data, "Could not delete event."));
+  };
+  const setRole = async (id, approveIt) => {
+    const body = approveIt ? { role: "organizer", requested_role: null } : { requested_role: null };
+    const { ok, data } = await api(`/auth/users/${id}/`, { method: "PATCH", token, body });
+    if (ok) { notify("success", approveIt ? "Organizer approved." : "Request declined."); load(); }
+    else notify("error", errText(data, "Update failed."));
+  };
+  const removeUser = async (u) => {
+    if (!window.confirm(`Remove ${u.username}? This cannot be undone.`)) return;
+    const { ok, data } = await api(`/auth/users/${u.id}/`, { method: "DELETE", token });
+    if (ok) { notify("success", "User removed."); load(); } else notify("error", errText(data, "Could not remove user."));
   };
 
   const gcal = (e) => {
@@ -322,7 +354,7 @@ export default function EventHub() {
     const t = (e.time || "10:00").replace(/:/g, "").slice(0, 4) + "00";
     const p = new URLSearchParams({
       action: "TEMPLATE", text: e.title || "", details: e.description || "",
-      location: e.venue_details?.name || "Campus Venue", dates: `${d}T${t}/${d}T${t}`,
+      location: e.venue_name || "Campus Venue", dates: `${d}T${t}/${d}T${t}`,
     });
     window.open(`https://calendar.google.com/calendar/render?${p}`, "_blank");
   };
@@ -333,6 +365,8 @@ export default function EventHub() {
       `${e.title} ${e.description}`.toLowerCase().includes(q.toLowerCase())),
     [events, cat, q]
   );
+  const venueOf = (e) => venues.find((v) => v.id === e.venue);
+  const canManage = (e) => isAdmin || (user?.role === "organizer" && e.organizer === user.id);
   const mine = regs.filter((r) => r.status === "registered");
   const isReg = (id) => !!user && mine.some((r) => (r.event?.id ?? r.event) === id);
   const first = (user?.full_name || user?.username || "").split(" ")[0];
@@ -345,13 +379,14 @@ export default function EventHub() {
       ? { id: "registrations", label: "My Bookings", icon: CheckCircle2, badge: mine.length }
       : { id: "bookings", label: "My Bookings", icon: CheckCircle2, go: () => { notify("warning", "Please log in to see your bookings."); goLogin(); } },
     ...(isStaff ? [{ id: "venues", label: "Venues", icon: MapPin }] : []),
-    ...(isAdmin ? [{ id: "users", label: "Admin", icon: Shield, badge: pending }] : []),
+    ...(isAdmin ? [{ id: "users", label: "Members", icon: Shield, badge: pending }] : []),
     ...(user
       ? [{ id: "profile", label: "Account", icon: User }]
       : [
           { id: "login", label: "Login", icon: User, go: () => goLogin("signin"), active: tab === "profile" && authMode === "signin" },
           { id: "register", label: "Register", icon: Plus, go: () => goLogin("signup"), active: tab === "profile" && authMode === "signup" },
         ]),
+    { id: "djadmin", label: "Admin", icon: Shield, go: () => window.open(`${API_BASE}/admin/`, "_blank", "noopener") },
   ];
 
   const actions = (e, full) =>
@@ -361,9 +396,9 @@ export default function EventHub() {
         <Btn v="danger" onClick={() => eventAction(e.id, "cancel")}>Cancel</Btn>
       </>
     ) : (
-      <Btn className={full && "flex-1"} disabled={left(e) <= 0} onClick={() => eventAction(e.id, "register")}>
+      <Btn className={full && "flex-1"} disabled={left(e) <= 0 || closed(e)} onClick={() => eventAction(e.id, "register")}>
         {!user && <Lock className="h-4 w-4" />}
-        {left(e) <= 0 ? "Sold out" : user ? "Register" : "Sign in to register"}
+        {left(e) <= 0 ? "Sold out" : closed(e) ? "Registration closed" : user ? "Register" : "Sign in to register"}
       </Btn>
     );
 
@@ -406,7 +441,7 @@ export default function EventHub() {
           </nav>
           <div className="flex items-center gap-2">
             {isStaff && (
-              <Btn v="accent" onClick={() => setCreating(true)}>
+              <Btn v="accent" onClick={() => { setDraft(BLANK_EVENT); setEditId(null); setCreating(true); }}>
                 <Plus className="h-4 w-4" /><span className="hidden sm:inline">Host event</span>
               </Btn>
             )}
@@ -479,7 +514,7 @@ export default function EventHub() {
             {isStaff && (
               <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
                 <Stat icon={Calendar} value={events.length} label="Events" />
-                <Stat icon={CheckCircle2} value={regs.length} label="Registrations" />
+                <Stat icon={CheckCircle2} value={events.reduce((a, e) => a + (e.registered_count || 0), 0)} label="Total registrations" />
                 <Stat icon={MapPin} value={venues.length} label="Venues" />
                 {isAdmin ? <Stat icon={Shield} value={pending} label="Pending approvals" />
                   : <Stat icon={Users} value={events.reduce((a, e) => a + Math.max(0, left(e)), 0)} label="Open seats" />}
@@ -513,8 +548,8 @@ export default function EventHub() {
                         <p className="mt-1.5 line-clamp-2 text-sm text-mute">{e.description}</p>
                       </div>
                       <div className="space-y-2">
-                        <Meta icon={Clock}>{e.date} · {e.time}</Meta>
-                        <Meta icon={MapPin}>{e.venue_details?.name || "Main Campus Venue"}</Meta>
+                        <Meta icon={Clock}>{e.date} · {hm(e.time)}</Meta>
+                        <Meta icon={MapPin}>{e.venue_name || "Main Campus Venue"}</Meta>
                       </div>
                       <div className="mt-auto space-y-4">
                         <Seats e={e} />
@@ -597,7 +632,7 @@ export default function EventHub() {
                   <Field label="Department" value={reg.department} onChange={(e) => setReg({ ...reg, department: e.target.value })}
                     options={["CSE", "FMRT", "FES", "MGT", "THM"].map((d) => <option key={d}>{d}</option>)} />
                   <Field label="Batch" placeholder="e.g. 2022-26" value={reg.batch} onChange={(e) => setReg({ ...reg, batch: e.target.value })} />
-                  <Field className="sm:col-span-2" label="Password" required type="password" placeholder="Min 6 characters" value={reg.password} onChange={(e) => setReg({ ...reg, password: e.target.value })} />
+                  <Field className="sm:col-span-2" label="Password" required type="password" placeholder="At least 4 characters" value={reg.password} onChange={(e) => setReg({ ...reg, password: e.target.value })} />
                   <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-line bg-sunken p-3.5 text-sm sm:col-span-2">
                     <input type="checkbox" className="h-4 w-4 accent-[rgb(var(--brand))]" checked={reg.apply_organizer} onChange={(e) => setReg({ ...reg, apply_organizer: e.target.checked })} />
                     Request organizer privileges (needs admin approval)
@@ -623,7 +658,7 @@ export default function EventHub() {
             ) : (
               <div className="grid gap-4 md:grid-cols-2">
                 {regs.map((r) => {
-                  const e = r.event_details || {};
+                  const e = events.find((x) => x.id === r.event) || { id: r.event, title: r.event_title };
                   const on = r.status === "registered";
                   return (
                     <div key={r.id} className="flex overflow-hidden rounded-2xl border border-line bg-surface">
@@ -634,8 +669,8 @@ export default function EventHub() {
                           <span className={cx("rounded-full px-2.5 py-1 text-[11px] font-bold capitalize",
                             on ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-sunken text-mute")}>{r.status}</span>
                         </div>
-                        <Meta icon={Clock}>{e.date} · {e.time}</Meta>
-                        <Meta icon={MapPin}>{e.venue_details?.name || "Campus"}</Meta>
+                        <Meta icon={Clock}>{e.date} · {hm(e.time)}</Meta>
+                        <Meta icon={MapPin}>{e.venue_name || "Campus"}</Meta>
                         <div className="flex flex-wrap gap-2 pt-1">
                           <Btn className="!px-3 !py-2" disabled={!on} onClick={() => setPass(e)}><QrCode className="h-4 w-4" />QR pass</Btn>
                           <Btn v="ghost" className="!px-3 !py-2" onClick={() => gcal(e)}><Calendar className="h-4 w-4" />Calendar</Btn>
@@ -656,7 +691,7 @@ export default function EventHub() {
             <h2 className="font-display text-3xl font-extrabold">Venues</h2>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {venues.map((v) => {
-                const n = events.filter((e) => (e.venue_details?.id ?? e.venue) === v.id).length;
+                const n = events.filter((e) => e.venue === v.id).length;
                 return (
                   <div key={v.id} className="rounded-3xl border border-line bg-surface p-5 transition hover:-translate-y-0.5 hover:shadow-lg">
                     <div className="mb-4 grid h-10 w-10 place-items-center rounded-xl bg-brand/10 text-brand"><MapPin className="h-5 w-5" /></div>
@@ -679,6 +714,9 @@ export default function EventHub() {
             <div>
               <h2 className="font-display text-3xl font-extrabold">Members</h2>
               <p className="text-sm text-mute">{users.length} total · {pending} awaiting organizer approval</p>
+              <Btn v="ghost" className="mt-3" onClick={() => window.open(`${API_BASE}/admin/`, "_blank", "noopener")}>
+                <Shield className="h-4 w-4" />Open Django admin panel
+              </Btn>
             </div>
             <div className="overflow-x-auto rounded-3xl border border-line bg-surface">
               <table className="w-full text-left text-sm">
@@ -700,10 +738,16 @@ export default function EventHub() {
                         <span className={cx("rounded-full px-2.5 py-1 text-[11px] font-bold capitalize",
                           u.role === "admin" ? "bg-purple-500/10 text-purple-500" : u.role === "organizer" ? "bg-brand/10 text-brand" : "bg-sunken text-mute")}>{u.role}</span>
                       </td>
-                      <td className="p-4 text-right">
-                        {u.requested_role === "organizer" && u.role !== "organizer"
-                          ? <Btn className="!px-3 !py-1.5" onClick={() => approve(u.id)}>Approve organizer</Btn>
-                          : <span className="text-xs text-mute">—</span>}
+                      <td className="p-4">
+                        <div className="flex justify-end gap-2">
+                          {u.requested_role === "organizer" && u.role !== "organizer" && (
+                            <>
+                              <Btn className="!px-3 !py-1.5" onClick={() => setRole(u.id, true)}>Approve</Btn>
+                              <Btn v="ghost" className="!px-3 !py-1.5" onClick={() => setRole(u.id, false)}>Decline</Btn>
+                            </>
+                          )}
+                          {u.id !== user.id && <Btn v="danger" className="!px-3 !py-1.5" onClick={() => removeUser(u)}>Remove</Btn>}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -738,8 +782,8 @@ export default function EventHub() {
               <p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-mute">{detail.description || "No description provided."}</p>
             </div>
             <div className="space-y-3 rounded-2xl border border-line bg-sunken p-4">
-              <Meta icon={Clock}>{detail.date} at {detail.time}</Meta>
-              <Meta icon={MapPin}>{detail.venue_details?.name || "Main Campus Venue"}{detail.venue_details?.location ? ` · ${detail.venue_details.location}` : ""}</Meta>
+              <Meta icon={Clock}>{detail.date} at {hm(detail.time)}</Meta>
+              <Meta icon={MapPin}>{detail.venue_name || "Main Campus Venue"}{venueOf(detail)?.location ? ` · ${venueOf(detail).location}` : ""}</Meta>
               <Meta icon={Calendar}>Registration closes {detail.registration_deadline || "—"}</Meta>
               <Meta icon={Users}>Capacity {detail.capacity}</Meta>
             </div>
@@ -749,6 +793,25 @@ export default function EventHub() {
               <Btn v="ghost" onClick={() => gcal(detail)}><Calendar className="h-4 w-4" />Add to calendar</Btn>
               <Btn v="ghost" onClick={() => setQr(detail)}><QrCode className="h-4 w-4" />Share QR</Btn>
             </div>
+            {canManage(detail) && (
+              <div className="space-y-4 border-t border-line pt-5">
+                <div className="grid grid-cols-2 gap-2">
+                  <Btn v="ghost" onClick={() => openEdit(detail)}>Edit event</Btn>
+                  <Btn v="danger" onClick={() => deleteEvent(detail)}>Delete event</Btn>
+                </div>
+                <div>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-mute">Participants ({detail.participants?.length || 0})</p>
+                  <ul className="divide-y divide-line rounded-2xl border border-line text-sm">
+                    {(detail.participants || []).map((p) => (
+                      <li key={p.id} className="flex justify-between gap-3 px-4 py-2.5">
+                        <span className="font-medium">{p.username}</span><span className="truncate text-mute">{p.email || p.registered_at}</span>
+                      </li>
+                    ))}
+                    {!detail.participants?.length && <li className="px-4 py-3 text-mute">No registrations yet.</li>}
+                  </ul>
+                </div>
+              </div>
+            )}
           </div>
         </Modal>
       )}
@@ -780,7 +843,7 @@ export default function EventHub() {
               <button onClick={() => setPass(null)} aria-label="Close"><X className="h-4 w-4" /></button>
             </div>
             <h4 className="font-display mt-5 text-2xl font-extrabold leading-tight">{pass.title}</h4>
-            <p className="mt-1 text-sm text-white/80">{pass.date} · {pass.time}</p>
+            <p className="mt-1 text-sm text-white/80">{pass.date} · {hm(pass.time)}</p>
           </div>
           <div className="relative border-t-2 border-dashed border-line px-6 pb-6 pt-8 text-center">
             <span className="absolute -left-3 -top-3 h-6 w-6 rounded-full bg-black/55" />
@@ -797,10 +860,10 @@ export default function EventHub() {
 
       {/* Create event */}
       {creating && (
-        <Modal onClose={() => setCreating(false)} panel="max-w-lg">
+        <Modal onClose={() => closeForm()} panel="max-w-lg">
           <form onSubmit={createEvent} className="space-y-4 p-6">
             <div className="flex items-center justify-between">
-              <h4 className="font-display text-xl font-extrabold">Publish new event</h4><CloseBtn onClick={() => setCreating(false)} />
+              <h4 className="font-display text-xl font-extrabold">{editId ? "Edit event" : "Publish new event"}</h4><CloseBtn onClick={() => closeForm()} />
             </div>
             <Field label="Title" required placeholder="e.g. Intro to Machine Learning" value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} />
             <div className="grid grid-cols-2 gap-3">
@@ -814,7 +877,7 @@ export default function EventHub() {
               <Field label="Registration deadline" required type="date" value={draft.registration_deadline} onChange={(e) => setDraft({ ...draft, registration_deadline: e.target.value })} />
             </div>
             <Field label="Description" rows={3} placeholder="What should attendees know?" value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} />
-            <Btn type="submit" disabled={busy} className="w-full py-3">{busy ? "Publishing…" : "Publish event"}</Btn>
+            <Btn type="submit" disabled={busy} className="w-full py-3">{busy ? "Saving…" : editId ? "Save changes" : "Publish event"}</Btn>
           </form>
         </Modal>
       )}
