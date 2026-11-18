@@ -19,6 +19,32 @@ const BLANK_EVENT = {
   venue: "", capacity: 100, registration_deadline: "",
 };
 
+const SAMPLE = { title: "Intro to Machine Learning", category: "Workshop", date: "2026-12-05", time: "10:00", venue_name: "Main Auditorium", capacity: 100, registered_count: 64 };
+const STEPS = [
+  [User, "Create your account", "Sign up as a student, or apply to become an organizer. It takes under a minute."],
+  [Search, "Find and book an event", "Browse workshops, competitions, cultural fests and career fairs, then register in one tap."],
+  [QrCode, "Walk in with your QR pass", "Get an instant digital pass and add the event to your Google Calendar."],
+];
+const FEATURES = [
+  [CheckCircle2, "One-tap registration", "See live seat counts and deadlines before you book, and cancel any time."],
+  [QrCode, "Instant QR passes", "Every booking comes with a digital pass for quick, paperless entry."],
+  [Calendar, "Calendar sync", "Add any event to Google Calendar so you never miss it."],
+  [MapPin, "Smart venue booking", "A venue can’t be double-booked at the same date and time."],
+  [Users, "Organizer tools", "Publish, edit and manage events, and see exactly who registered."],
+  [Shield, "Admin control", "Approve organizers and manage members from one place."],
+];
+const ROLES = [
+  [GraduationCap, "Participants", ["Discover events by category", "Register and cancel in one tap", "Keep every pass in My Bookings"]],
+  [Building2, "Organizers", ["Host events with capacity and deadlines", "Edit details any time", "See the participant list live"]],
+  [Shield, "Admins", ["Approve organizer requests", "Manage members and roles", "Full control via the admin panel"]],
+];
+const SectionHead = ({ kicker, title, text }) => (
+  <div className="mx-auto mb-10 max-w-2xl text-center">
+    <p className="text-sm font-semibold text-brand">{kicker}</p>
+    <h2 className="font-display mt-2 text-3xl font-extrabold tracking-tight sm:text-4xl">{title}</h2>
+    {text && <p className="mt-3 text-mute">{text}</p>}
+  </div>
+);
 const cx = (...a) => a.filter(Boolean).join(" ");
 const list = (d) => (Array.isArray(d) ? d : d?.results || []);
 const dparts = (s) => { const [, m, d] = (s || "").split("-"); return { m: MON[+m - 1] || "—", d: d || "—" }; };
@@ -367,6 +393,7 @@ export default function EventHub() {
   );
   const venueOf = (e) => venues.find((v) => v.id === e.venue);
   const canManage = (e) => isAdmin || (user?.role === "organizer" && e.organizer === user.id);
+  const soon = events.filter((e) => (e.date || "") >= today()).slice(0, 3);
   const mine = regs.filter((r) => r.status === "registered");
   const isReg = (id) => !!user && mine.some((r) => (r.event?.id ?? r.event) === id);
   const first = (user?.full_name || user?.username || "").split(" ")[0];
@@ -454,37 +481,166 @@ export default function EventHub() {
         </div>
       </header>
 
-      {/* ===== WELCOME (full-screen landing) ===== */}
+      {/* ===== WELCOME (landing page) ===== */}
       {tab === "welcome" && (
-        <section
-          className="relative flex min-h-[calc(100vh-4rem)] items-center justify-center overflow-hidden px-6 py-16 text-center text-white"
-          style={{
-            backgroundImage: "linear-gradient(rgba(2,6,23,.60), rgba(2,6,23,.80)), url(/hero.jpg), linear-gradient(135deg,#0b1b3a,#1d4ed8)",
-            backgroundSize: "cover", backgroundPosition: "center",
-          }}
-        >
-          <div className="anim-pop max-w-4xl">
-            <span className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-1.5 text-xs font-semibold backdrop-blur">
-              <Sparkles className="h-3.5 w-3.5 text-accent" />Campus & enterprise events
-            </span>
-            <h1 className="font-display mt-6 text-4xl font-extrabold leading-[1.05] tracking-tight sm:text-6xl lg:text-7xl">
-              Welcome to the <span className="text-accent">Event Management</span> Website!
-            </h1>
-            <p className="mx-auto mt-6 max-w-xl text-lg text-white/80">
-              Discover, plan, and book amazing events with ease. Let’s make your next event unforgettable.
-            </p>
-            <Btn v="accent" className="mt-10 !rounded-full !px-8 !py-4 text-base" onClick={() => setTab("home")}>
-              Enter Home Page<ArrowRight className="h-5 w-5" />
-            </Btn>
-            <div className="mx-auto mt-14 grid max-w-2xl gap-3 text-sm sm:grid-cols-3">
-              {[[Shield, "Verified profiles"], [QrCode, "Instant QR passes"], [Calendar, "Calendar sync"]].map(([I, l]) => (
-                <div key={l} className="flex items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/10 px-4 py-3 backdrop-blur">
-                  <I className="h-4 w-4 text-accent" />{l}
+        <div className="anim-fade pb-16 md:pb-0">
+          {/* Hero */}
+          <section
+            className="relative overflow-hidden text-white"
+            style={{
+              backgroundImage: "linear-gradient(rgba(2,6,23,.65), rgba(2,6,23,.88)), url(/hero.jpg), linear-gradient(135deg,#0b1b3a,#1d4ed8)",
+              backgroundSize: "cover", backgroundPosition: "center",
+            }}
+          >
+            <div className="mx-auto grid max-w-7xl items-center gap-14 px-4 py-16 sm:px-6 lg:grid-cols-2 lg:py-24">
+              <div>
+                <span className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-1.5 text-xs font-semibold backdrop-blur">
+                  <Sparkles className="h-3.5 w-3.5 text-accent" />Campus & enterprise events
+                </span>
+                <h1 className="font-display mt-6 text-4xl font-extrabold leading-[1.05] tracking-tight sm:text-5xl lg:text-6xl">
+                  Every campus event, <span className="text-accent">one simple platform.</span>
+                </h1>
+                <p className="mt-6 max-w-xl text-lg text-white/80">
+                  Event Management is where students discover events, register in one tap and get a QR entry pass.
+                  Organizers publish and manage events, and admins keep everything in order.
+                </p>
+                <div className="mt-8 flex flex-wrap gap-3">
+                  <Btn v="accent" className="!rounded-full !px-7 !py-3.5 text-base" onClick={() => setTab("home")}>
+                    Browse events<ArrowRight className="h-5 w-5" />
+                  </Btn>
+                  {!user && (
+                    <button onClick={() => goLogin("signup")}
+                      className="rounded-full border border-white/30 bg-white/10 px-7 py-3.5 text-base font-semibold backdrop-blur transition hover:bg-white/20">
+                      Create free account
+                    </button>
+                  )}
+                </div>
+                <div className="mt-10 flex gap-8">
+                  {[[events.length, "Events"], [venues.length, "Venues"], [events.reduce((a, e) => a + (e.registered_count || 0), 0), "Seats booked"]].map(([n, l]) => (
+                    <div key={l}>
+                      <div className="font-display text-3xl font-extrabold">{n}</div>
+                      <div className="text-xs text-white/60">{l}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {(() => {
+                const e = events[0] || SAMPLE;
+                return (
+                  <div className="relative mx-auto w-full max-w-sm">
+                    <div className="absolute -left-4 top-10 z-10 flex items-center gap-2 rounded-2xl bg-surface px-3 py-2 text-xs font-semibold text-ink shadow-xl">
+                      <Check className="h-4 w-4 text-emerald-500" />Seat confirmed
+                    </div>
+                    <div className="overflow-hidden rounded-3xl border border-white/15 bg-surface text-ink shadow-2xl shadow-black/40 lg:rotate-2">
+                      <Banner e={e} className="h-24" />
+                      <div className="space-y-3 p-5">
+                        <h3 className="font-display text-xl font-bold">{e.title}</h3>
+                        <Meta icon={Clock}>{e.date} · {hm(e.time)}</Meta>
+                        <Meta icon={MapPin}>{e.venue_name || "Main Auditorium"}</Meta>
+                        <Seats e={e} />
+                        <Btn className="w-full" onClick={() => setTab("home")}>Register</Btn>
+                        <p className="flex items-center justify-center gap-1.5 text-xs text-mute"><QrCode className="h-3.5 w-3.5" />Your QR pass appears right after booking</p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          </section>
+
+          {/* How it works */}
+          <section className="mx-auto max-w-7xl px-4 py-20 sm:px-6">
+            <SectionHead kicker="How it works" title="From sign-up to front row in three steps" />
+            <div className="grid gap-5 md:grid-cols-3">
+              {STEPS.map(([I, t, d], i) => (
+                <div key={t} className="relative rounded-3xl border border-line bg-surface p-6">
+                  <span className="font-display absolute right-6 top-4 text-5xl font-extrabold text-brand/10">{i + 1}</span>
+                  <div className="mb-4 grid h-11 w-11 place-items-center rounded-2xl bg-brand/10 text-brand"><I className="h-5 w-5" /></div>
+                  <h3 className="font-display text-lg font-bold">{t}</h3>
+                  <p className="mt-2 text-sm text-mute">{d}</p>
                 </div>
               ))}
             </div>
-          </div>
-        </section>
+          </section>
+
+          {/* Features */}
+          <section className="border-y border-line bg-sunken">
+            <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6">
+              <SectionHead kicker="What you get" title="Everything an event needs, in one place"
+                text="No more spreadsheets, paper lists or group-chat chaos." />
+              <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                {FEATURES.map(([I, t, d]) => (
+                  <div key={t} className="flex gap-4 rounded-2xl border border-line bg-surface p-5">
+                    <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-brand/10 text-brand"><I className="h-5 w-5" /></div>
+                    <div><h3 className="font-semibold">{t}</h3><p className="mt-1 text-sm text-mute">{d}</p></div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+
+          {/* Happening soon */}
+          {soon.length > 0 && (
+            <section className="mx-auto max-w-7xl px-4 pt-20 sm:px-6">
+              <div className="mb-8 flex items-end justify-between">
+                <h2 className="font-display text-3xl font-extrabold tracking-tight">Happening soon</h2>
+                <button onClick={() => setTab("home")} className="flex items-center gap-1 text-sm font-semibold text-brand">View all<ArrowRight className="h-4 w-4" /></button>
+              </div>
+              <div className="grid gap-5 md:grid-cols-3">
+                {soon.map((e) => (
+                  <article key={e.id} onClick={() => setDetail(e)}
+                    className="cursor-pointer overflow-hidden rounded-3xl border border-line bg-surface transition hover:-translate-y-1 hover:shadow-xl">
+                    <Banner e={e} className="h-20" />
+                    <div className="space-y-2 p-5">
+                      <h3 className="font-display text-lg font-bold">{e.title}</h3>
+                      <Meta icon={Clock}>{e.date} · {hm(e.time)}</Meta>
+                      <Meta icon={MapPin}>{e.venue_name || "Campus"}</Meta>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* Roles */}
+          <section className="mx-auto max-w-7xl px-4 py-20 sm:px-6">
+            <SectionHead kicker="Who it’s for" title="Built for everyone behind an event" />
+            <div className="grid gap-5 md:grid-cols-3">
+              {ROLES.map(([I, t, items]) => (
+                <div key={t} className="rounded-3xl border border-line bg-surface p-6">
+                  <div className="mb-4 grid h-11 w-11 place-items-center rounded-2xl bg-brand text-white"><I className="h-5 w-5" /></div>
+                  <h3 className="font-display text-xl font-bold">{t}</h3>
+                  <ul className="mt-3 space-y-2 text-sm text-mute">
+                    {items.map((x) => <li key={x} className="flex gap-2"><Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />{x}</li>)}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {/* Final CTA */}
+          <section className="px-4 pb-20 sm:px-6">
+            <div className="dots mx-auto max-w-5xl rounded-[2rem] bg-gradient-to-br from-blue-700 to-sky-600 px-6 py-14 text-center text-white">
+              <h2 className="font-display text-3xl font-extrabold sm:text-4xl">Ready for your next event?</h2>
+              <p className="mx-auto mt-3 max-w-lg text-white/80">Join in seconds to attend events, or apply to host your own.</p>
+              <div className="mt-8 flex flex-wrap justify-center gap-3">
+                {!user && <Btn v="accent" className="!rounded-full !px-7 !py-3.5" onClick={() => goLogin("signup")}>Create free account</Btn>}
+                <button onClick={() => setTab("home")} className="rounded-full border border-white/30 bg-white/10 px-7 py-3.5 text-sm font-semibold transition hover:bg-white/20">Explore events</button>
+              </div>
+            </div>
+          </section>
+
+          <footer className="border-t border-line">
+            <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 px-4 py-8 text-sm text-mute sm:flex-row sm:px-6">
+              <span>© {new Date().getFullYear()} Event Management System</span>
+              <div className="flex gap-5">
+                <button onClick={() => setTab("home")} className="hover:text-ink">Events</button>
+                <button onClick={() => window.open(`${API_BASE}/admin/`, "_blank", "noopener")} className="hover:text-ink">Admin panel</button>
+              </div>
+            </div>
+          </footer>
+        </div>
       )}
 
       <main className={cx("mx-auto max-w-7xl px-4 pb-28 pt-6 sm:px-6 md:pb-14", tab === "welcome" && "hidden")}>
