@@ -61,6 +61,14 @@ class EventSerializer(serializers.ModelSerializer):
         return attrs
 
     def get_participants(self, event):
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        allowed = bool(
+            user and user.is_authenticated
+            and (user.role == "admin" or event.organizer_id == user.id)
+        )
+        if not allowed:
+            return []
         registrations = event.registrations.filter(
             status=Registration.Status.REGISTERED
         ).select_related("participant")
