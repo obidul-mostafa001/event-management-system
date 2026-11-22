@@ -7,19 +7,20 @@ import {
 
 const API_BASE = (import.meta.env?.VITE_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
 const CATS = ["All", "Workshop", "Competition", "Cultural", "Career"];
-const TONE = {
-  Workshop: "from-sky-500 to-indigo-600",
-  Competition: "from-orange-500 to-rose-600",
-  Cultural: "from-fuchsia-500 to-purple-600",
-  Career: "from-emerald-500 to-teal-600",
-};
+const IMG = { Workshop: "workshop", Competition: "competition", Cultural: "cultural", Career: "career" };
+const imgOf = (e) => `/images/${IMG[e?.category] || "general"}.svg`;
+// [image, left %, top %, width vw, rotation, float delay s]
+const TILES = [
+  ["workshop", 6, 11, 9.5, -5, 0], ["hackathon", 21, 25, 9, 4, 1.2], ["techtalk", 39, -5, 11, 2, 0.6], ["fest", 61, -4, 9.5, -4, 1.8],
+  ["seminar", 76, 9, 9.5, 4, 0.3], ["sports", 4, 42, 8, -4, 2.2], ["cultural", 13, 62, 11, 4, 0.9], ["music", 82, 33, 10, -3, 1.5],
+  ["career", 70, 56, 9, 3, 2.6], ["competition", 87, 57, 7.5, -5, 0.4], ["bookclub", 78, 76, 9.5, 4, 1.1], ["general", 38, 82, 10, -2, 1.9],
+];
 const MON = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 const BLANK_EVENT = {
   title: "", description: "", category: "Workshop", date: "", time: "10:00",
   venue: "", capacity: 100, registration_deadline: "",
 };
 
-const SAMPLE = { title: "Intro to Machine Learning", category: "Workshop", date: "2026-12-05", time: "10:00", venue_name: "Main Auditorium", capacity: 100, registered_count: 64 };
 const STEPS = [
   [User, "Create your account", "Sign up as a student, or apply to become an organizer. It takes under a minute."],
   [Search, "Find and book an event", "Browse workshops, competitions, cultural fests and career fairs, then register in one tap."],
@@ -165,9 +166,12 @@ const Meta = ({ icon: I, children }) => (
 const Banner = ({ e, className }) => {
   const d = dparts(e.date);
   return (
-    <div className={cx("dots bg-gradient-to-br p-4", TONE[e.category] || TONE.Workshop, className)}>
-      <div className="flex items-start justify-between">
-        <span className="rounded-full bg-black/25 px-2.5 py-1 text-[11px] font-semibold text-white backdrop-blur">{e.category}</span>
+    <div className={cx("relative overflow-hidden bg-sunken", className)}>
+      <img src={imgOf(e)} alt={`${e.category || "Event"} poster`} loading="lazy"
+        className="absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-105" />
+      <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-transparent to-black/10" />
+      <div className="relative flex items-start justify-between p-4">
+        <span className="rounded-full bg-black/40 px-2.5 py-1 text-[11px] font-semibold text-white backdrop-blur">{e.category}</span>
         <div className="rounded-xl bg-white px-2.5 py-1.5 text-center text-stone-900 shadow-md">
           <div className="text-[9px] font-bold tracking-widest text-stone-500">{d.m}</div>
           <div className="font-display text-lg font-extrabold leading-none">{d.d}</div>
@@ -393,6 +397,9 @@ export default function EventHub() {
   );
   const venueOf = (e) => venues.find((v) => v.id === e.venue);
   const canManage = (e) => isAdmin || (user?.role === "organizer" && e.organizer === user.id);
+  const cta = isStaff
+    ? ["Host your first event", () => { setDraft(BLANK_EVENT); setEditId(null); setCreating(true); }]
+    : user ? ["Browse events", () => setTab("home")] : ["Create your account", () => goLogin("signup")];
   const soon = events.filter((e) => (e.date || "") >= today()).slice(0, 3);
   const mine = regs.filter((r) => r.status === "registered");
   const isReg = (id) => !!user && mine.some((r) => (r.event?.id ?? r.event) === id);
@@ -451,10 +458,10 @@ export default function EventHub() {
       </div>
 
       {/* Header */}
-      <header className="sticky top-0 z-30 bg-brand text-white shadow-lg shadow-brand/20">
+      <header className={cx("z-30 text-white", tab === "welcome" ? "absolute inset-x-0 top-0" : "sticky top-0 bg-brand shadow-lg shadow-brand/20")}>
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
           <button onClick={() => setTab("welcome")} aria-label="Welcome page"><Logo /></button>
-          <nav className="hidden items-center gap-1 md:flex">
+          <nav className={cx("hidden items-center gap-1 md:flex", tab === "welcome" && "!hidden")}>
             {nav.map((t) => (
               <button
                 key={t.id} onClick={t.go || (() => setTab(t.id))}
@@ -467,7 +474,7 @@ export default function EventHub() {
             ))}
           </nav>
           <div className="flex items-center gap-2">
-            {isStaff && (
+            {isStaff && tab !== "welcome" && (
               <Btn v="accent" onClick={() => { setDraft(BLANK_EVENT); setEditId(null); setCreating(true); }}>
                 <Plus className="h-4 w-4" /><span className="hidden sm:inline">Host event</span>
               </Btn>
@@ -476,6 +483,9 @@ export default function EventHub() {
               onClick={() => setDark(!dark)} aria-label="Toggle theme"
               className="rounded-xl border border-white/20 bg-white/10 p-2.5 text-white transition hover:bg-white/20"
             >{dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}</button>
+            {!user && tab === "welcome" && (
+              <button onClick={() => goLogin("signin")} className="rounded-full bg-white/10 px-4 py-2 text-sm font-semibold backdrop-blur transition hover:bg-white/20">Sign in</button>
+            )}
             {user && <button onClick={() => setTab("profile")} aria-label="Account"><Avatar u={user} size="h-10 w-10 text-sm !bg-white/20" /></button>}
           </div>
         </div>
@@ -485,67 +495,41 @@ export default function EventHub() {
       {tab === "welcome" && (
         <div className="anim-fade pb-16 md:pb-0">
           {/* Hero */}
-          <section
-            className="relative overflow-hidden text-white"
-            style={{
-              backgroundImage: "linear-gradient(rgba(2,6,23,.65), rgba(2,6,23,.88)), url(/hero.jpg), linear-gradient(135deg,#0b1b3a,#1d4ed8)",
-              backgroundSize: "cover", backgroundPosition: "center",
-            }}
-          >
-            <div className="mx-auto grid max-w-7xl items-center gap-14 px-4 py-16 sm:px-6 lg:grid-cols-2 lg:py-24">
-              <div>
-                <span className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-1.5 text-xs font-semibold backdrop-blur">
-                  <Sparkles className="h-3.5 w-3.5 text-accent" />Campus & enterprise events
-                </span>
-                <h1 className="font-display mt-6 text-4xl font-extrabold leading-[1.05] tracking-tight sm:text-5xl lg:text-6xl">
-                  Every campus event, <span className="text-accent">one simple platform.</span>
-                </h1>
-                <p className="mt-6 max-w-xl text-lg text-white/80">
-                  Event Management is where students discover events, register in one tap and get a QR entry pass.
-                  Organizers publish and manage events, and admins keep everything in order.
-                </p>
-                <div className="mt-8 flex flex-wrap gap-3">
-                  <Btn v="accent" className="!rounded-full !px-7 !py-3.5 text-base" onClick={() => setTab("home")}>
-                    Browse events<ArrowRight className="h-5 w-5" />
-                  </Btn>
-                  {!user && (
-                    <button onClick={() => goLogin("signup")}
-                      className="rounded-full border border-white/30 bg-white/10 px-7 py-3.5 text-base font-semibold backdrop-blur transition hover:bg-white/20">
-                      Create free account
-                    </button>
-                  )}
+          <section className="relative isolate flex min-h-screen items-center justify-center overflow-hidden bg-[#111113] px-6 text-center text-white">
+            <div aria-hidden="true" className="pointer-events-none absolute inset-0">
+              {TILES.map(([img, l, t, w, r, d]) => (
+                <div key={img} className={cx("float absolute", !(t < 15 || t > 78) && "hidden sm:block")}
+                  style={{ left: `${l}%`, top: `${t}%`, width: `clamp(58px, ${w}vw, ${w * 1.6}px)`, animationDelay: `${d}s` }}>
+                  <img src={`/images/${img}.svg`} alt="" loading="lazy" style={{ transform: `rotate(${r}deg)` }}
+                    className="aspect-square w-full rounded-2xl border border-white/10 object-cover shadow-2xl shadow-black/60 ring-4 ring-white/5" />
                 </div>
-                <div className="mt-10 flex gap-8">
-                  {[[events.length, "Events"], [venues.length, "Venues"], [events.reduce((a, e) => a + (e.registered_count || 0), 0), "Seats booked"]].map(([n, l]) => (
-                    <div key={l}>
-                      <div className="font-display text-3xl font-extrabold">{n}</div>
-                      <div className="text-xs text-white/60">{l}</div>
-                    </div>
-                  ))}
-                </div>
+              ))}
+            </div>
+            <div className="pointer-events-none absolute inset-0"
+              style={{ background: "radial-gradient(ellipse at center, rgba(17,17,19,.93) 0%, rgba(17,17,19,.6) 38%, transparent 70%)" }} />
+            <div className="relative z-10 max-w-3xl py-28">
+              <div className="mb-6 flex items-center justify-center gap-2 text-white/60">
+                <Calendar className="h-6 w-6" /><span className="font-display text-2xl font-bold tracking-tight">Event Management</span>
               </div>
-
-              {(() => {
-                const e = events[0] || SAMPLE;
-                return (
-                  <div className="relative mx-auto w-full max-w-sm">
-                    <div className="absolute -left-4 top-10 z-10 flex items-center gap-2 rounded-2xl bg-surface px-3 py-2 text-xs font-semibold text-ink shadow-xl">
-                      <Check className="h-4 w-4 text-emerald-500" />Seat confirmed
-                    </div>
-                    <div className="overflow-hidden rounded-3xl border border-white/15 bg-surface text-ink shadow-2xl shadow-black/40 lg:rotate-2">
-                      <Banner e={e} className="h-24" />
-                      <div className="space-y-3 p-5">
-                        <h3 className="font-display text-xl font-bold">{e.title}</h3>
-                        <Meta icon={Clock}>{e.date} · {hm(e.time)}</Meta>
-                        <Meta icon={MapPin}>{e.venue_name || "Main Auditorium"}</Meta>
-                        <Seats e={e} />
-                        <Btn className="w-full" onClick={() => setTab("home")}>Register</Btn>
-                        <p className="flex items-center justify-center gap-1.5 text-xs text-mute"><QrCode className="h-3.5 w-3.5" />Your QR pass appears right after booking</p>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
+              <h1 className="font-display text-5xl font-extrabold leading-[1.02] tracking-tight sm:text-7xl">
+                Campus events<br />
+                <span className="bg-gradient-to-r from-fuchsia-500 via-pink-500 to-orange-400 bg-clip-text text-transparent">made effortless</span>
+              </h1>
+              <p className="mx-auto mt-6 max-w-xl text-lg text-white/60">
+                From workshops and hackathons to cultural nights and career fairs, discover what’s on, register in one tap and walk in with a QR pass.
+              </p>
+              <button onClick={cta[1]}
+                className="mt-9 rounded-full bg-white px-7 py-3.5 text-base font-semibold text-black shadow-xl shadow-white/10 transition hover:scale-[1.03] active:scale-[.98]">
+                {cta[0]}
+              </button>
+              <div>
+                <button onClick={() => setTab("home")} className="mt-5 inline-flex items-center gap-1.5 text-sm font-medium text-white/60 transition hover:text-white">
+                  Discover events<ArrowRight className="h-4 w-4" />
+                </button>
+              </div>
+              <p className="mt-10 text-xs text-white/40">
+                {events.length} events · {venues.length} venues · {events.reduce((a, e) => a + (e.registered_count || 0), 0)} seats booked
+              </p>
             </div>
           </section>
 
@@ -591,7 +575,7 @@ export default function EventHub() {
                 {soon.map((e) => (
                   <article key={e.id} onClick={() => setDetail(e)}
                     className="cursor-pointer overflow-hidden rounded-3xl border border-line bg-surface transition hover:-translate-y-1 hover:shadow-xl">
-                    <Banner e={e} className="h-20" />
+                    <Banner e={e} className="h-32" />
                     <div className="space-y-2 p-5">
                       <h3 className="font-display text-lg font-bold">{e.title}</h3>
                       <Meta icon={Clock}>{e.date} · {hm(e.time)}</Meta>
@@ -697,7 +681,7 @@ export default function EventHub() {
                     key={e.id} onClick={() => setDetail(e)}
                     className="group flex cursor-pointer flex-col overflow-hidden rounded-3xl border border-line bg-surface transition duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-black/10"
                   >
-                    <Banner e={e} className="h-28" />
+                    <Banner e={e} className="h-40" />
                     <div className="flex flex-1 flex-col gap-4 p-5">
                       <div>
                         <h3 className="font-display text-xl font-bold leading-snug transition group-hover:text-brand">{e.title}</h3>
@@ -818,7 +802,7 @@ export default function EventHub() {
                   const on = r.status === "registered";
                   return (
                     <div key={r.id} className="flex overflow-hidden rounded-2xl border border-line bg-surface">
-                      <div className={cx("w-2 bg-gradient-to-b", TONE[e.category] || TONE.Workshop)} />
+                      <img src={imgOf(e)} alt="" className="hidden w-24 object-cover sm:block" />
                       <div className="flex-1 space-y-3 p-5">
                         <div className="flex items-start justify-between gap-3">
                           <h3 className="font-display text-lg font-bold">{e.title || "Event registration"}</h3>
@@ -915,7 +899,7 @@ export default function EventHub() {
       </main>
 
       {/* Mobile bottom nav */}
-      <nav className="fixed inset-x-0 bottom-0 z-30 flex h-16 items-center justify-around border-t border-line bg-bg/90 backdrop-blur-xl md:hidden">
+      <nav className={cx("fixed inset-x-0 bottom-0 z-30 flex h-16 items-center justify-around border-t border-line bg-bg/90 backdrop-blur-xl md:hidden", tab === "welcome" && "!hidden")}>
         {nav.map((t) => (
           <button key={t.id} onClick={t.go || (() => setTab(t.id))} className={cx("relative flex flex-col items-center gap-1 px-3 text-[11px] font-semibold", (t.active ?? tab === t.id) ? "text-brand" : "text-mute")}>
             <t.icon className="h-5 w-5" />{t.label}
@@ -931,7 +915,7 @@ export default function EventHub() {
             <span className="text-sm font-semibold">Event details</span>
             <CloseBtn onClick={() => setDetail(null)} />
           </div>
-          <Banner e={detail} className="h-36" />
+          <Banner e={detail} className="h-48" />
           <div className="space-y-6 p-6">
             <div>
               <h2 className="font-display text-3xl font-extrabold leading-tight">{detail.title}</h2>
@@ -993,7 +977,7 @@ export default function EventHub() {
       {/* Ticket */}
       {pass && user && (
         <Modal onClose={() => setPass(null)} panel="max-w-xs">
-          <div className={cx("dots bg-gradient-to-br p-6 text-white", TONE[pass.category] || TONE.Workshop)}>
+          <div className="p-6 text-white" style={{ backgroundImage: `linear-gradient(rgba(0,0,0,.5),rgba(0,0,0,.78)),url(${imgOf(pass)})`, backgroundSize: "cover", backgroundPosition: "center" }}>
             <div className="flex items-center justify-between text-xs font-semibold">
               <span className="flex items-center gap-1.5"><Check className="h-4 w-4" />Verified pass</span>
               <button onClick={() => setPass(null)} aria-label="Close"><X className="h-4 w-4" /></button>
