@@ -153,6 +153,35 @@ const CloseBtn = ({ onClick }) => (
   </button>
 );
 
+const DEMO_USERS = {
+  participant: { id: 900001, username: "demo_participant", full_name: "Demo Participant", role: "participant", email: "participant@demo.test", phone: "+880 1700-000001", department: "CSE", batch: "2022-26", demo: true },
+  organizer: { id: 900002, username: "demo_organizer", full_name: "Demo Organizer", role: "organizer", email: "organizer@demo.test", phone: "+880 1700-000002", department: "CSE", batch: "Faculty", demo: true },
+};
+const addDays = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return d.toLocaleDateString("en-CA"); };
+function demoSeed(role) {
+  const venues = [
+    { id: 1, name: "Main Auditorium", location: "Academic Building, Floor 1", capacity: 300 },
+    { id: 2, name: "Innovation Lab", location: "CSE Building, Floor 2", capacity: 60 },
+    { id: 3, name: "Open Stage", location: "Central Field", capacity: 500 },
+    { id: 4, name: "Conference Room", location: "Admin Block", capacity: 80 },
+  ];
+  const own = DEMO_USERS.organizer.id;
+  const person = (i, n) => ({ id: 100 + i, username: n, email: `${n}@demo.test`, registered_at: new Date().toISOString() });
+  const mk = (id, title, category, days, time, venue, capacity, registered_count, organizer, description, participants = []) => ({
+    id, title, category, date: addDays(days), time, venue, venue_name: venues.find((v) => v.id === venue).name,
+    capacity, registered_count, registration_deadline: addDays(days - 1), organizer, description, participants,
+  });
+  const events = [
+    mk(1, "Intro to Machine Learning", "Workshop", 5, "10:00", 2, 60, 41, own, "Hands-on beginner session: build and train your first model.", [person(1, "rafi"), person(2, "nusrat"), person(3, "imran")]),
+    mk(2, "Campus Hackathon", "Competition", 9, "09:00", 2, 60, 38, own, "24-hour team coding challenge with prizes.", [person(4, "sadia"), person(5, "tanvir")]),
+    mk(3, "Cultural Night", "Cultural", 12, "18:00", 3, 500, 212, 1, "Music, dance and drama performances by student clubs."),
+    mk(4, "Career Fair", "Career", 15, "11:00", 1, 300, 187, 1, "Meet recruiters and alumni from leading companies."),
+    mk(5, "Photography Walk", "Workshop", 20, "08:00", 4, 80, 22, 1, "Golden-hour photo walk with tips from a pro."),
+  ];
+  const regs = role === "participant" ? [{ id: 1, event: 3, event_title: "Cultural Night", status: "registered", registered_at: new Date().toISOString() }] : [];
+  return { venues, events, regs };
+}
+
 const MenuItem = ({ icon: I, badge, danger, children, ...p }) => (
   <button {...p} className={cx("flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium transition hover:bg-sunken", danger ? "text-rose-500" : "text-ink")}>
     <I className={cx("h-4 w-4 shrink-0", danger ? "text-rose-500" : "text-mute")} />
@@ -265,6 +294,7 @@ export default function EventHub() {
 
   const token = user?.token;
   const isAdmin = user?.role === "admin";
+  const isDemo = !!user?.demo;
   const isStaff = isAdmin || user?.role === "organizer";
   const notify = (type, text) => setToast({ type, text, k: Date.now() });
 
@@ -287,6 +317,7 @@ export default function EventHub() {
   }, [menu]);
 
   const load = useCallback(async () => {
+    if (user?.demo) return; // demo mode never touches the backend
     setLoading(true);
     try {
       const [ev, vn] = await Promise.all([api("/events/", { token }), api("/venues/", { token })]);
@@ -348,10 +379,47 @@ export default function EventHub() {
     finally { setBusy(false); }
   };
 
+  const startDemo = (role) => {
+    const { venues: vn, events: ev, regs: rg } = demoSeed(role);
+    setUser(DEMO_USERS[role]); setVenues(vn); setEvents(ev); setRegs(rg); setUsers([]);
+    setLoading(false); setTab("home"); setMenu(false);
+    notify("success", `Demo ${role} mode: try anything, nothing is saved.`);
+  };
+
   const logout = () => {
-    setUser(null); setRegs([]); setUsers([]); setTab("home");
+    if (user?.demo) { setEvents([]); setVenues([]); }
+    setUser(null); setRegs([]); setUsers([]); setTab(user?.demo ? "welcome" : "home");
     localStorage.removeItem("eh_user");
     localStorage.removeItem("eh_token");
+  };
+
+  const bump = (id, delta, p) => {
+    const next = events.map((e) => e.id !== id ? e : {
+      ...e,
+      registered_count: Math.max(0, (e.registered_count || 0) + delta),
+      participants: delta > 0 ? [...(e.participants || []), p] : (e.participants || []).filter((x) => x.username !== user.username),
+    });
+    setEvents(next);
+    setDetail((d) => d && (next.find((x) => x.id === d.id) || null));
+  };
+  const demoAction = (id, kind) => {
+    const e = events.find((x) => x.id === id);
+    if (!e) return;
+    const active = regs.find((r) => r.event === id && r.status === "registered");
+    if (kind === "register") {
+      if (active) return notify("error", "You are already registered for this event.");
+      if (closed(e)) return notify("error", "Registration for this event has closed.");
+      if (left(e) <= 0) return notify("error", "This event is fully booked.");
+      const p = { id: Date.now(), username: user.username, email: user.email, registered_at: new Date().toISOString() };
+      setRegs([...regs.filter((r) => r.event !== id), { id: p.id, event: id, event_title: e.title, status: "registered", registered_at: p.registered_at }]);
+      bump(id, 1, p);
+      notify("success", "You're in! Your pass is ready. (demo)");
+    } else {
+      if (!active) return notify("error", "You have no active registration for this event.");
+      setRegs(regs.map((r) => (r === active ? { ...r, status: "cancelled" } : r)));
+      bump(id, -1);
+      notify("success", "Registration cancelled. (demo)");
+    }
   };
 
   const eventAction = async (id, kind) => {
@@ -361,6 +429,7 @@ export default function EventHub() {
       return;
     }
     try {
+      if (user.demo) return demoAction(id, kind);
       const { ok, data } = kind === "register"
         ? await api("/registrations/", { method: "POST", token, body: { event: id } })
         : await api(`/events/${id}/cancel/`, { method: "POST", token });
@@ -373,6 +442,17 @@ export default function EventHub() {
 
   const createEvent = async (e) => {
     e.preventDefault();
+    if (user?.demo) {
+      const v = venues.find((x) => String(x.id) === String(draft.venue));
+      const base = { ...draft, capacity: Number(draft.capacity), venue: Number(draft.venue), venue_name: v?.name || "" };
+      const next = editId
+        ? events.map((x) => (x.id === editId ? { ...x, ...base } : x))
+        : [...events, { id: Date.now(), registered_count: 0, organizer: user.id, participants: [], ...base }];
+      next.sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+      setEvents(next); closeForm(); setDraft(BLANK_EVENT);
+      notify("success", editId ? "Event updated. (demo)" : "Event published. (demo)");
+      return;
+    }
     setBusy(true);
     try {
       const { ok, data } = await api(editId ? `/events/${editId}/` : "/events/", { method: editId ? "PATCH" : "POST", token, body: draft });
@@ -390,6 +470,11 @@ export default function EventHub() {
   };
   const deleteEvent = async (e) => {
     if (!window.confirm(`Delete "${e.title}"? This also removes its registrations.`)) return;
+    if (user?.demo) {
+      setEvents(events.filter((x) => x.id !== e.id)); setRegs(regs.filter((r) => r.event !== e.id));
+      setDetail(null); notify("success", "Event deleted. (demo)");
+      return;
+    }
     const { ok, data } = await api(`/events/${e.id}/`, { method: "DELETE", token });
     if (ok) { notify("success", "Event deleted."); setDetail(null); load(); }
     else notify("error", errText(data, "Could not delete event."));
@@ -470,10 +555,17 @@ export default function EventHub() {
         )}
       </div>
 
+      {isDemo && (
+        <div className="fixed bottom-4 left-1/2 z-[55] flex -translate-x-1/2 items-center gap-3 rounded-full bg-amber-400 px-4 py-2 text-xs font-semibold text-slate-950 shadow-xl">
+          Demo mode · nothing is saved
+          <button onClick={logout} className="rounded-full bg-black/10 px-2.5 py-1 transition hover:bg-black/20">Exit demo</button>
+        </div>
+      )}
+
       {/* Header */}
       <header className={cx("z-30 text-white", tab === "welcome" ? "absolute inset-x-0 top-0" : "sticky top-0 bg-brand shadow-lg shadow-brand/20")}>
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
-          <button onClick={() => setTab("home")} aria-label="Home"><Logo /></button>
+          <button onClick={() => setTab("welcome")} aria-label="Home page"><Logo /></button>
           <div className="flex items-center gap-2">
             {isStaff && tab !== "welcome" && (
               <Btn v="accent" onClick={() => { setDraft(BLANK_EVENT); setEditId(null); setCreating(true); }}>
@@ -510,6 +602,7 @@ export default function EventHub() {
                           </div>
                         </div>
                         <div className="p-2">
+                          <MenuItem icon={Calendar} onClick={pick(() => setTab("welcome"))}>Home</MenuItem>
                           <MenuItem icon={Sparkles} onClick={pick(() => setTab("home"))}>Dashboard</MenuItem>
                           <MenuItem icon={CheckCircle2} badge={mine.length} onClick={pick(() => setTab("registrations"))}>My bookings</MenuItem>
                           {isStaff && <MenuItem icon={MapPin} onClick={pick(() => setTab("venues"))}>Venues</MenuItem>}
@@ -518,7 +611,7 @@ export default function EventHub() {
                           {isAdmin && <MenuItem icon={Shield} onClick={pick(() => window.open(`${API_BASE}/admin/`, "_blank", "noopener"))}>Admin panel</MenuItem>}
                         </div>
                         <div className="border-t border-line p-2">
-                          <MenuItem icon={LogOut} danger onClick={pick(logout)}>Sign out</MenuItem>
+                          <MenuItem icon={LogOut} danger onClick={pick(logout)}>{isDemo ? "Exit demo" : "Sign out"}</MenuItem>
                         </div>
                       </>
                     ) : (
@@ -531,7 +624,16 @@ export default function EventHub() {
                           <Btn onClick={pick(() => goLogin("signin"))}>Log in</Btn>
                           <Btn v="ghost" onClick={pick(() => goLogin("signup"))}>Register</Btn>
                         </div>
+                        <MenuItem icon={Calendar} onClick={pick(() => setTab("welcome"))}>Home</MenuItem>
                         <MenuItem icon={Sparkles} onClick={pick(() => setTab("home"))}>Browse events</MenuItem>
+                        <div className="rounded-xl bg-sunken p-3">
+                          <p className="text-xs font-semibold">Try the demo</p>
+                          <p className="mt-0.5 text-xs text-mute">Do anything, nothing is saved.</p>
+                          <div className="mt-2 grid grid-cols-2 gap-2">
+                            <Btn v="ghost" className="!px-2 !py-2 !text-xs" onClick={pick(() => startDemo("participant"))}>Participant</Btn>
+                            <Btn v="ghost" className="!px-2 !py-2 !text-xs" onClick={pick(() => startDemo("organizer"))}>Organizer</Btn>
+                          </div>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -580,7 +682,14 @@ export default function EventHub() {
                   Discover events<ArrowRight className="h-4 w-4" />
                 </button>
               </div>
-              <p className="mt-10 text-xs text-white/40">
+              {!user && (
+                <div className="mt-6 flex flex-wrap items-center justify-center gap-2 text-xs text-white/50">
+                  <span>Or explore with a demo account:</span>
+                  <button onClick={() => startDemo("participant")} className="rounded-full border border-white/20 bg-white/10 px-3 py-1 font-semibold text-white transition hover:bg-white/20">Participant</button>
+                  <button onClick={() => startDemo("organizer")} className="rounded-full border border-white/20 bg-white/10 px-3 py-1 font-semibold text-white transition hover:bg-white/20">Organizer</button>
+                </div>
+              )}
+              <p className="mt-8 text-xs text-white/40">
                 {events.length} events · {venues.length} venues · {events.reduce((a, e) => a + (e.registered_count || 0), 0)} seats booked
               </p>
             </div>
@@ -808,11 +917,9 @@ export default function EventHub() {
                   <Field label="Password" required type="password" autoComplete="current-password" placeholder="••••••••" value={login.password} onChange={(e) => setLogin({ ...login, password: e.target.value })} />
                   <Btn type="submit" disabled={busy} className="w-full py-3">{busy ? "Signing in…" : "Sign in"}</Btn>
                   <div className="flex flex-wrap items-center gap-2 pt-2">
-                    <span className="text-xs text-mute">Quick demo login:</span>
-                    {[["admin", "AdminPass123!"], ["organizer", "OrganizerPass123!"], ["student", "StudentPass123!"]].map(([u, p]) => (
-                      <button key={u} type="button" onClick={() => setLogin({ username: u, password: p })}
-                        className="rounded-full border border-line px-3 py-1 text-xs font-semibold capitalize transition hover:bg-sunken">{u}</button>
-                    ))}
+                    <span className="text-xs text-mute">Just looking? Try the demo:</span>
+                    <button type="button" onClick={() => startDemo("participant")} className="rounded-full border border-line px-3 py-1 text-xs font-semibold transition hover:bg-sunken">Demo participant</button>
+                    <button type="button" onClick={() => startDemo("organizer")} className="rounded-full border border-line px-3 py-1 text-xs font-semibold transition hover:bg-sunken">Demo organizer</button>
                   </div>
                 </form>
               ) : (
