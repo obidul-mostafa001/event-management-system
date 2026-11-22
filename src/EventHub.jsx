@@ -8,7 +8,7 @@ import {
 const API_BASE = (import.meta.env?.VITE_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
 const CATS = ["All", "Workshop", "Competition", "Cultural", "Career"];
 const IMG = { Workshop: "workshop", Competition: "competition", Cultural: "cultural", Career: "career" };
-const imgOf = (e) => `/images/${IMG[e?.category] || "general"}.svg`;
+const imgOf = (e) => `/${IMG[e?.category] || "general"}.svg`;
 // [image, left %, top %, width vw, rotation, float delay s]
 const TILES = [
   ["workshop", 6, 11, 9.5, -5, 0], ["hackathon", 21, 25, 9, 4, 1.2], ["techtalk", 39, -5, 11, 2, 0.6], ["fest", 61, -4, 9.5, -4, 1.8],
@@ -500,7 +500,7 @@ export default function EventHub() {
               {TILES.map(([img, l, t, w, r, d]) => (
                 <div key={img} className={cx("float absolute", !(t < 15 || t > 78) && "hidden sm:block")}
                   style={{ left: `${l}%`, top: `${t}%`, width: `clamp(58px, ${w}vw, ${w * 1.6}px)`, animationDelay: `${d}s` }}>
-                  <img src={`/images/${img}.svg`} alt="" loading="lazy" style={{ transform: `rotate(${r}deg)` }}
+                  <img src={`/${img}.svg`} alt="" loading="lazy" style={{ transform: `rotate(${r}deg)` }}
                     className="aspect-square w-full rounded-2xl border border-white/10 object-cover shadow-2xl shadow-black/60 ring-4 ring-white/5" />
                 </div>
               ))}
