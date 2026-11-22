@@ -10,10 +10,21 @@ const CATS = ["All", "Workshop", "Competition", "Cultural", "Career"];
 const IMG = { Workshop: "workshop", Competition: "competition", Cultural: "cultural", Career: "career" };
 const imgOf = (e) => `/${IMG[e?.category] || "general"}.svg`;
 // [image, left %, top %, width vw, rotation, float delay s]
+const WP = "https://pd.w.org/"; // free CC0 flower photos (WordPress Photo Directory)
 const TILES = [
-  ["workshop", 6, 11, 9.5, -5, 0], ["hackathon", 21, 25, 9, 4, 1.2], ["techtalk", 39, -5, 11, 2, 0.6], ["fest", 61, -4, 9.5, -4, 1.8],
-  ["seminar", 76, 9, 9.5, 4, 0.3], ["sports", 4, 42, 8, -4, 2.2], ["cultural", 13, 62, 11, 4, 0.9], ["music", 82, 33, 10, -3, 1.5],
-  ["career", 70, 56, 9, 3, 2.6], ["competition", 87, 57, 7.5, -5, 0.4], ["bookclub", 78, 76, 9.5, 4, 1.1], ["general", 38, 82, 10, -2, 1.9],
+  [WP + "2026/04/85569f38208cd2f95.73515056-768x1365.jpg", 3, 4, 14, -4, 0],
+  ["workshop", 15, 30, 12, 4, 1.2],
+  [WP + "2025/08/93468a02258c586d8.34940109-768x512.jpg", 2, 37, 13, -3, 2.2],
+  ["cultural", 14, 58, 14, 4, 0.9],
+  ["sports", 1, 76, 12, -5, 1.6],
+  [WP + "2025/04/88067fc9e132b6a07.16929199-768x432.jpg", 82, 4, 14, 4, 0.4],
+  ["hackathon", 73, 24, 12, -3, 1.8],
+  [WP + "2026/05/35569f7659633f9d6.48417481-768x1024.jpeg", 85, 38, 12.5, 3, 0.7],
+  ["career", 73, 56, 12, -4, 2.6],
+  ["music", 86, 62, 10.5, 5, 0.3],
+  ["fest", 72, 82, 14, -3, 1.1],
+  ["techtalk", 41, -4, 13, 2, 0.6],
+  ["general", 38, 84, 14, -2, 1.9],
 ];
 const MON = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 const BLANK_EVENT = {
@@ -498,10 +509,12 @@ export default function EventHub() {
           <section className="relative isolate flex min-h-screen items-center justify-center overflow-hidden bg-[#111113] px-6 text-center text-white">
             <div aria-hidden="true" className="pointer-events-none absolute inset-0">
               {TILES.map(([img, l, t, w, r, d]) => (
-                <div key={img} className={cx("float absolute", !(t < 15 || t > 78) && "hidden sm:block")}
-                  style={{ left: `${l}%`, top: `${t}%`, width: `clamp(58px, ${w}vw, ${w * 1.6}px)`, animationDelay: `${d}s` }}>
-                  <img src={`/${img}.svg`} alt="" loading="lazy" style={{ transform: `rotate(${r}deg)` }}
-                    className="aspect-square w-full rounded-2xl border border-white/10 object-cover shadow-2xl shadow-black/60 ring-4 ring-white/5" />
+                <div key={img} className={cx("float absolute", !(t < 14 || t >= 76) && "hidden sm:block")}
+                  style={{ left: `${l}%`, top: `${t}%`, width: `clamp(84px, ${w}vw, ${w * 19}px)`, animationDelay: `${d}s` }}>
+                  <img src={img.startsWith("http") ? img : `/${img}.svg`} alt="" loading="lazy"
+                    onError={(ev) => { ev.currentTarget.onerror = null; ev.currentTarget.src = "/general.svg"; }}
+                    style={{ transform: `rotate(${r}deg)` }}
+                    className="aspect-square w-full rounded-3xl border border-white/10 bg-white/5 object-cover shadow-2xl shadow-black/60 ring-4 ring-white/5" />
                 </div>
               ))}
             </div>
